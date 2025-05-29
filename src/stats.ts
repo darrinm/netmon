@@ -1,7 +1,7 @@
-import { NetworkMetric, NetworkStats } from './types';
+import { NetworkMetric, NetworkStats, OutageEvent } from './types';
 
 export class StatsAnalyzer {
-  static analyze(metrics: NetworkMetric[], period: string): NetworkStats {
+  static analyze(metrics: NetworkMetric[], period: string, outages: OutageEvent[] = []): NetworkStats {
     if (metrics.length === 0) {
       const now = new Date();
       return {
@@ -18,6 +18,13 @@ export class StatsAnalyzer {
         dnsStats: {
           avgResponseTime: 0,
           successRate: 0
+        },
+        outageStats: {
+          totalOutages: 0,
+          totalDuration: 0,
+          avgDuration: 0,
+          longestOutage: 0,
+          outagePercentage: 0
         },
         samples: 0
       };
@@ -53,6 +60,29 @@ export class StatsAnalyzer {
       ? (dnsSuccesses / metrics.length) * 100
       : 0;
 
+    const relevantOutages = outages.filter(o => 
+      o.startTime >= startTime && o.startTime <= endTime
+    );
+    
+    const totalOutageDuration = relevantOutages.reduce((sum, o) => {
+      const duration = o.duration || (Date.now() - o.startTime.getTime());
+      return sum + duration;
+    }, 0);
+
+    const totalPeriodDuration = endTime.getTime() - startTime.getTime();
+    const outagePercentage = totalPeriodDuration > 0
+      ? (totalOutageDuration / totalPeriodDuration) * 100
+      : 0;
+
+    const longestOutage = relevantOutages.reduce((max, o) => {
+      const duration = o.duration || (Date.now() - o.startTime.getTime());
+      return Math.max(max, duration);
+    }, 0);
+
+    const avgOutageDuration = relevantOutages.length > 0
+      ? totalOutageDuration / relevantOutages.length
+      : 0;
+
     return {
       period,
       startTime,
@@ -67,6 +97,13 @@ export class StatsAnalyzer {
       dnsStats: {
         avgResponseTime: Math.round(avgDnsResponseTime * 100) / 100,
         successRate: Math.round(dnsSuccessRate * 100) / 100
+      },
+      outageStats: {
+        totalOutages: relevantOutages.length,
+        totalDuration: Math.round(totalOutageDuration / 1000),
+        avgDuration: Math.round(avgOutageDuration / 1000),
+        longestOutage: Math.round(longestOutage / 1000),
+        outagePercentage: Math.round(outagePercentage * 100) / 100
       },
       samples: metrics.length
     };

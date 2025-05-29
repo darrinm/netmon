@@ -1,6 +1,6 @@
 import chalk from 'chalk';
 import Table from 'cli-table3';
-import { NetworkMetric, NetworkStats } from './types';
+import { NetworkMetric, NetworkStats, OutageEvent } from './types';
 
 export class Display {
   static formatLatency(ms: number): string {
@@ -20,6 +20,14 @@ export class Display {
     if (uptime >= 99) return chalk.green(`${uptime}%`);
     if (uptime >= 95) return chalk.yellow(`${uptime}%`);
     return chalk.red(`${uptime}%`);
+  }
+
+  static formatDuration(seconds: number): string {
+    if (seconds < 60) return `${seconds}s`;
+    if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    return `${hours}h ${minutes}m`;
   }
 
   static showCurrentStatus(metric: NetworkMetric): void {
@@ -49,8 +57,8 @@ export class Display {
     console.log(chalk.bold.cyan('\n📊 Network Statistics\n'));
 
     const statsTable = new Table({
-      head: ['Period', 'Uptime', 'Avg Latency', 'Packet Loss', 'DNS Success', 'Samples'],
-      colWidths: [15, 12, 15, 15, 15, 10]
+      head: ['Period', 'Uptime', 'Avg Latency', 'Packet Loss', 'Outages', 'Downtime', 'Samples'],
+      colWidths: [15, 10, 12, 12, 10, 12, 10]
     });
 
     stats.forEach((stat, period) => {
@@ -59,7 +67,12 @@ export class Display {
         this.formatUptime(stat.pingStats.uptime),
         this.formatLatency(stat.pingStats.avgLatency),
         this.formatPacketLoss(stat.pingStats.avgPacketLoss),
-        this.formatUptime(stat.dnsStats.successRate),
+        stat.outageStats.totalOutages > 0 
+          ? chalk.red(stat.outageStats.totalOutages.toString())
+          : chalk.green('0'),
+        stat.outageStats.totalDuration > 0
+          ? chalk.red(this.formatDuration(stat.outageStats.totalDuration))
+          : chalk.green('0s'),
         stat.samples.toString()
       ]);
     });
@@ -85,7 +98,24 @@ export class Display {
       ['', ''],
       [chalk.bold.underline('DNS Statistics'), ''],
       ['Average Response Time', `${stats.dnsStats.avgResponseTime}ms`],
-      ['Success Rate', this.formatUptime(stats.dnsStats.successRate)]
+      ['Success Rate', this.formatUptime(stats.dnsStats.successRate)],
+      ['', ''],
+      [chalk.bold.underline('Outage Statistics'), ''],
+      ['Total Outages', stats.outageStats.totalOutages > 0 
+        ? chalk.red(stats.outageStats.totalOutages.toString())
+        : chalk.green('0')],
+      ['Total Downtime', stats.outageStats.totalDuration > 0
+        ? chalk.red(this.formatDuration(stats.outageStats.totalDuration))
+        : chalk.green('0s')],
+      ['Average Outage Duration', stats.outageStats.avgDuration > 0
+        ? this.formatDuration(stats.outageStats.avgDuration)
+        : 'N/A'],
+      ['Longest Outage', stats.outageStats.longestOutage > 0
+        ? chalk.red(this.formatDuration(stats.outageStats.longestOutage))
+        : 'N/A'],
+      ['Downtime Percentage', stats.outageStats.outagePercentage > 0
+        ? chalk.red(`${stats.outageStats.outagePercentage}%`)
+        : chalk.green('0%')]
     );
 
     console.log(table.toString());
@@ -105,6 +135,36 @@ export class Display {
         this.formatLatency(metric.ping.avg),
         this.formatPacketLoss(metric.ping.packetLoss),
         metric.dns.success ? chalk.green('✓') : chalk.red('✗')
+      ]);
+    });
+
+    console.log(table.toString());
+  }
+
+  static showOutages(outages: OutageEvent[]): void {
+    console.log(chalk.bold.cyan('\n🚨 Outage History\n'));
+
+    if (outages.length === 0) {
+      console.log(chalk.green('No outages recorded.'));
+      return;
+    }
+
+    const table = new Table({
+      head: ['Start Time', 'End Time', 'Duration', 'Type', 'Packet Loss'],
+      colWidths: [25, 25, 15, 15, 15]
+    });
+
+    outages.slice(-20).reverse().forEach(outage => {
+      const duration = outage.duration 
+        ? this.formatDuration(Math.round(outage.duration / 1000))
+        : chalk.yellow('Ongoing');
+      
+      table.push([
+        outage.startTime.toLocaleString(),
+        outage.endTime ? outage.endTime.toLocaleString() : chalk.yellow('Ongoing'),
+        duration,
+        outage.type === 'connectivity' ? chalk.red('Full') : chalk.yellow('Partial'),
+        chalk.red(`${outage.metrics.packetLoss}%`)
       ]);
     });
 

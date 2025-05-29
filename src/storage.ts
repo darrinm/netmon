@@ -1,14 +1,17 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import { NetworkMetric } from './types';
+import { NetworkMetric, OutageEvent } from './types';
 
 export class MetricsStorage {
   private dataFile: string;
+  private outageFile: string;
   private metrics: NetworkMetric[] = [];
+  private outages: OutageEvent[] = [];
   private maxMetrics: number = 10000;
 
   constructor(dataFile: string) {
     this.dataFile = dataFile;
+    this.outageFile = dataFile.replace('.json', '-outages.json');
   }
 
   async init(): Promise<void> {
@@ -22,6 +25,18 @@ export class MetricsStorage {
       }));
     } catch (error) {
       this.metrics = [];
+    }
+
+    try {
+      const outageData = await fs.readFile(this.outageFile, 'utf-8');
+      const parsedOutages = JSON.parse(outageData);
+      this.outages = parsedOutages.map((o: any) => ({
+        ...o,
+        startTime: new Date(o.startTime),
+        endTime: o.endTime ? new Date(o.endTime) : undefined
+      }));
+    } catch (error) {
+      this.outages = [];
     }
   }
 
@@ -39,6 +54,20 @@ export class MetricsStorage {
     await fs.writeFile(this.dataFile, JSON.stringify(this.metrics, null, 2));
   }
 
+  async saveOutage(outage: OutageEvent): Promise<void> {
+    const existingIndex = this.outages.findIndex(o => o.id === outage.id);
+    if (existingIndex >= 0) {
+      this.outages[existingIndex] = outage;
+    } else {
+      this.outages.push(outage);
+    }
+    await this.persistOutages();
+  }
+
+  private async persistOutages(): Promise<void> {
+    await fs.writeFile(this.outageFile, JSON.stringify(this.outages, null, 2));
+  }
+
   getMetrics(since?: Date): NetworkMetric[] {
     if (!since) return [...this.metrics];
     
@@ -49,7 +78,14 @@ export class MetricsStorage {
     return this.metrics.slice(-count);
   }
 
+  getOutages(since?: Date): OutageEvent[] {
+    if (!since) return [...this.outages];
+    
+    return this.outages.filter(o => o.startTime >= since);
+  }
+
   clear(): void {
     this.metrics = [];
+    this.outages = [];
   }
 }

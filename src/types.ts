@@ -15,6 +15,19 @@ export interface NetworkMetric {
     responseTime: number;
     success: boolean;
   };
+  isOutage?: boolean;
+}
+
+export interface OutageEvent {
+  id: string;
+  startTime: Date;
+  endTime?: Date;
+  duration?: number;
+  type: 'connectivity' | 'partial';
+  metrics: {
+    packetLoss: number;
+    dnsFailure: boolean;
+  };
 }
 
 export interface NetworkStats {
@@ -31,6 +44,13 @@ export interface NetworkStats {
   dnsStats: {
     avgResponseTime: number;
     successRate: number;
+  };
+  outageStats: {
+    totalOutages: number;
+    totalDuration: number;
+    avgDuration: number;
+    longestOutage: number;
+    outagePercentage: number;
   };
   samples: number;
 }

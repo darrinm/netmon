@@ -8,6 +8,8 @@ A command-line utility that monitors your network connection quality and provide
 
 - 🔍 Real-time network monitoring
 - 📊 Historical statistics for different time periods
+- 🚨 Automatic outage detection and duration tracking
+- 📈 Detailed downtime analytics
 - 🎨 Color-coded status indicators
 - 💾 Persistent data storage
 - ⚡ Lightweight and efficient
@@ -29,6 +31,7 @@ Two convenient shell scripts are provided:
 ./netmon              # Start monitoring
 ./netmon stats        # Show statistics
 ./netmon history      # Show history
+./netmon outages      # Show outage history
 ./netmon help         # Show help
 ```
 
@@ -68,6 +71,13 @@ npm start history
 npm start history -- --number 50  # Show last 50 entries
 ```
 
+### View Outages
+```bash
+npm start outages
+npm start outages -- --period 168  # Show outages from last week
+npm start outages -- --period 0    # Show all outages
+```
+
 ### Clear Data
 ```bash
 npm start clear
@@ -79,6 +89,10 @@ npm start clear
 - **Packet Loss**: Percentage of lost packets
 - **DNS Response Time**: Time to resolve DNS queries
 - **Network Uptime**: Percentage of successful connections
+- **Outages**: Automatic detection with duration tracking
+  - Full connectivity loss (100% packet loss)
+  - Partial outages (high packet loss + DNS failures)
+  - Outage duration and frequency statistics
 
 ## Data Storage
 

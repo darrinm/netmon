@@ -54,9 +54,10 @@ show_menu() {
     echo -e "  ${GREEN}1)${NC} Start Monitoring"
     echo -e "  ${GREEN}2)${NC} View Statistics"
     echo -e "  ${GREEN}3)${NC} View History"
-    echo -e "  ${GREEN}4)${NC} Quick Status Check"
-    echo -e "  ${GREEN}5)${NC} Configure Settings"
-    echo -e "  ${GREEN}6)${NC} Clear Data"
+    echo -e "  ${GREEN}4)${NC} View Outages"
+    echo -e "  ${GREEN}5)${NC} Quick Status Check"
+    echo -e "  ${GREEN}6)${NC} Configure Settings"
+    echo -e "  ${GREEN}7)${NC} Clear Data"
     echo -e "  ${GREEN}0)${NC} Exit"
     echo
     echo -e "${CYAN}Current Settings:${NC} Host: ${YELLOW}$CURRENT_HOST${NC}, Interval: ${YELLOW}${CURRENT_INTERVAL}s${NC}"
@@ -221,12 +222,20 @@ main() {
                 read -p "Press Enter to continue..."
                 ;;
             4)
-                quick_status
+                show_banner
+                echo -e "${CYAN}Outage History:${NC}"
+                echo
+                npm run dev outages
+                echo
+                read -p "Press Enter to continue..."
                 ;;
             5)
-                configure_menu
+                quick_status
                 ;;
             6)
+                configure_menu
+                ;;
+            7)
                 show_banner
                 echo -e "${YELLOW}⚠️  Clear all monitoring data?${NC}"
                 echo -e "${RED}This action cannot be undone!${NC}"

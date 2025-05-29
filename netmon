@@ -41,6 +41,7 @@ show_help() {
     echo "    monitor    Start monitoring network connection (default)"
     echo "    stats      Show network statistics"
     echo "    history    Show recent monitoring history"
+    echo "    outages    Show outage history"
     echo "    clear      Clear all monitoring data"
     echo "    help       Show this help message"
     echo
@@ -51,6 +52,8 @@ show_help() {
     echo "    netmon stats              # Show last 24h statistics"
     echo "    netmon stats -p 1         # Show last hour statistics"
     echo "    netmon history -n 50      # Show last 50 entries"
+    echo "    netmon outages            # Show outages from last 24h"
+    echo "    netmon outages -p 0       # Show all outages"
     echo
     echo -e "${GREEN}MONITOR OPTIONS:${NC}"
     echo "    -h, --host <host>         Host to ping (default: 8.8.8.8)"
@@ -91,6 +94,10 @@ case "$COMMAND" in
     
     history|hist|h)
         exec npm run dev history -- "$@"
+        ;;
+    
+    outages|out|o)
+        exec npm run dev outages -- "$@"
         ;;
     
     clear|c)

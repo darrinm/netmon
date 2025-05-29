@@ -8,6 +8,7 @@ import { NetworkMonitor } from './monitor';
 import { MetricsStorage } from './storage';
 import { StatsAnalyzer } from './stats';
 import { Display } from './display';
+import { OutageTracker } from './outage-tracker';
 import { MonitorConfig } from './types';
 
 const DEFAULT_CONFIG: MonitorConfig = {
@@ -38,8 +39,10 @@ program
 
     const monitor = new NetworkMonitor(config);
     const storage = new MetricsStorage(config.dataFile);
+    const outageTracker = new OutageTracker();
     
     await storage.init();
+    outageTracker.loadOutages(storage.getOutages());
     
     console.log(chalk.bold.green('🚀 Starting network monitor...'));
     console.log(chalk.gray(`Monitoring ${config.pingHost} every ${options.interval}s`));
@@ -47,14 +50,43 @@ program
     console.log(chalk.gray('Press Ctrl+C to stop\n'));
 
     monitor.start(async (metric) => {
+      const outageEvent = outageTracker.processMetric(metric);
       await storage.save(metric);
+      
+      if (outageEvent) {
+        await storage.saveOutage(outageEvent);
+        if (!outageEvent.endTime) {
+          console.log(chalk.bold.red('\n🚨 OUTAGE DETECTED! 🚨\n'));
+        } else {
+          console.log(chalk.bold.green('\n✅ Connectivity Restored\n'));
+        }
+      }
+      
       Display.showCurrentStatus(metric);
+      
+      const currentOutage = outageTracker.getCurrentOutage();
+      if (currentOutage) {
+        const duration = Date.now() - currentOutage.startTime.getTime();
+        console.log(chalk.bold.red(`\n⚠️  ONGOING OUTAGE: ${Display.formatDuration(Math.round(duration / 1000))}\n`));
+      }
       
       const last24h = StatsAnalyzer.getMetricsForPeriod(storage.getMetrics(), 24);
       const stats = new Map([
-        ['Last Hour', StatsAnalyzer.analyze(StatsAnalyzer.getMetricsForPeriod(storage.getMetrics(), 1), 'Last Hour')],
-        ['Last 24 Hours', StatsAnalyzer.analyze(last24h, 'Last 24 Hours')],
-        ['All Time', StatsAnalyzer.analyze(storage.getMetrics(), 'All Time')]
+        ['Last Hour', StatsAnalyzer.analyze(
+          StatsAnalyzer.getMetricsForPeriod(storage.getMetrics(), 1), 
+          'Last Hour',
+          storage.getOutages()
+        )],
+        ['Last 24 Hours', StatsAnalyzer.analyze(
+          last24h, 
+          'Last 24 Hours',
+          storage.getOutages()
+        )],
+        ['All Time', StatsAnalyzer.analyze(
+          storage.getMetrics(), 
+          'All Time',
+          storage.getOutages()
+        )]
       ]);
       
       Display.showStats(stats);
@@ -87,7 +119,8 @@ program
     }
 
     const period = hours === 0 ? 'All Time' : `Last ${hours} Hours`;
-    const stats = StatsAnalyzer.analyze(metrics, period);
+    const outages = storage.getOutages();
+    const stats = StatsAnalyzer.analyze(metrics, period, outages);
     
     Display.showDetailedStats(stats);
   });
@@ -110,6 +143,35 @@ program
     }
 
     Display.showHistory(metrics);
+  });
+
+program
+  .command('outages')
+  .description('Show outage history')
+  .option('-p, --period <hours>', 'Period in hours (0 for all time)', '24')
+  .option('-d, --data-file <path>', 'Data file path', DEFAULT_CONFIG.dataFile)
+  .action(async (options) => {
+    const storage = new MetricsStorage(options.dataFile);
+    await storage.init();
+    
+    const hours = parseInt(options.period);
+    const since = hours === 0 ? undefined : new Date(Date.now() - hours * 60 * 60 * 1000);
+    const outages = storage.getOutages(since);
+    
+    if (outages.length === 0) {
+      console.log(chalk.green('No outages recorded for the specified period.'));
+      return;
+    }
+
+    Display.showOutages(outages);
+    
+    const totalDuration = outages.reduce((sum, o) => {
+      const duration = o.duration || (Date.now() - o.startTime.getTime());
+      return sum + duration;
+    }, 0);
+    
+    console.log(chalk.bold(`\nTotal Outages: ${outages.length}`));
+    console.log(chalk.bold(`Total Downtime: ${Display.formatDuration(Math.round(totalDuration / 1000))}`));
   });
 
 program
