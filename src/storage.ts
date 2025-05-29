@@ -7,7 +7,7 @@ export class MetricsStorage {
   private outageFile: string;
   private metrics: NetworkMetric[] = [];
   private outages: OutageEvent[] = [];
-  private maxMetrics: number = 100000; // ~35 days at 30s intervals
+  private maxMetrics: number = 100000; // ~28 hours at 1s intervals, ~35 days at 30s intervals
 
   constructor(dataFile: string) {
     this.dataFile = dataFile;

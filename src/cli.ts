@@ -49,7 +49,9 @@ program
     console.log(chalk.gray(`Data stored in: ${config.dataFile}`));
     console.log(chalk.gray('Press Ctrl+C to stop\n'));
 
+    let sessionCollections = 0;
     monitor.start(async (metric) => {
+      sessionCollections++;
       const outageEvent = outageTracker.processMetric(metric);
       await storage.save(metric);
       
@@ -69,6 +71,8 @@ program
         const duration = Date.now() - currentOutage.startTime.getTime();
         console.log(chalk.bold.red(`\n⚠️  ONGOING OUTAGE: ${Display.formatDuration(Math.round(duration / 1000))}\n`));
       }
+      
+      console.log(chalk.gray(`\nSession Collections: ${sessionCollections}`));
       
       const allMetrics = storage.getMetrics();
       const last5min = StatsAnalyzer.getMetricsForPeriod(allMetrics, 0.0833); // 5 min = 0.0833 hours
