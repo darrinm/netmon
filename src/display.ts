@@ -58,7 +58,7 @@ export class Display {
 
     const statsTable = new Table({
       head: ['Period', 'Uptime', 'Avg Latency', 'Packet Loss', 'Outages', 'Downtime', 'Samples'],
-      colWidths: [15, 10, 12, 12, 10, 12, 10]
+      colWidths: [14, 9, 12, 12, 9, 11, 9]
     });
 
     stats.forEach((stat, period) => {

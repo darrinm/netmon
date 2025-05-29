@@ -7,7 +7,7 @@ export class MetricsStorage {
   private outageFile: string;
   private metrics: NetworkMetric[] = [];
   private outages: OutageEvent[] = [];
-  private maxMetrics: number = 10000;
+  private maxMetrics: number = 100000; // ~35 days at 30s intervals
 
   constructor(dataFile: string) {
     this.dataFile = dataFile;
@@ -84,8 +84,10 @@ export class MetricsStorage {
     return this.outages.filter(o => o.startTime >= since);
   }
 
-  clear(): void {
+  async clear(): Promise<void> {
     this.metrics = [];
     this.outages = [];
+    await this.persist();
+    await this.persistOutages();
   }
 }

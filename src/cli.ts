@@ -70,23 +70,17 @@ program
         console.log(chalk.bold.red(`\n⚠️  ONGOING OUTAGE: ${Display.formatDuration(Math.round(duration / 1000))}\n`));
       }
       
-      const last24h = StatsAnalyzer.getMetricsForPeriod(storage.getMetrics(), 24);
+      const allMetrics = storage.getMetrics();
+      const last5min = StatsAnalyzer.getMetricsForPeriod(allMetrics, 0.0833); // 5 min = 0.0833 hours
+      const lastHour = StatsAnalyzer.getMetricsForPeriod(allMetrics, 1);
+      const last24h = StatsAnalyzer.getMetricsForPeriod(allMetrics, 24);
+      const allOutages = storage.getOutages();
+      
       const stats = new Map([
-        ['Last Hour', StatsAnalyzer.analyze(
-          StatsAnalyzer.getMetricsForPeriod(storage.getMetrics(), 1), 
-          'Last Hour',
-          storage.getOutages()
-        )],
-        ['Last 24 Hours', StatsAnalyzer.analyze(
-          last24h, 
-          'Last 24 Hours',
-          storage.getOutages()
-        )],
-        ['All Time', StatsAnalyzer.analyze(
-          storage.getMetrics(), 
-          'All Time',
-          storage.getOutages()
-        )]
+        ['Last 5 Min', StatsAnalyzer.analyze(last5min, 'Last 5 Min', allOutages)],
+        ['Last Hour', StatsAnalyzer.analyze(lastHour, 'Last Hour', allOutages)],
+        ['Last 24 Hours', StatsAnalyzer.analyze(last24h, 'Last 24 Hours', allOutages)],
+        ['All Time', StatsAnalyzer.analyze(allMetrics, 'All Time', allOutages)]
       ]);
       
       Display.showStats(stats);
@@ -181,7 +175,7 @@ program
   .action(async (options) => {
     const storage = new MetricsStorage(options.dataFile);
     await storage.init();
-    storage.clear();
+    await storage.clear();
     console.log(chalk.green('✓ Monitoring data cleared.'));
   });
 

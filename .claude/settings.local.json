@@ -12,7 +12,10 @@
       "Bash(git init:*)",
       "Bash(git add:*)",
       "Bash(git commit:*)",
-      "Bash(gh repo create:*)"
+      "Bash(gh repo create:*)",
+      "Bash(ls:*)",
+      "Bash(jq length:*)",
+      "Bash(jq:*)"
     ]
   },
   "enableAllProjectMcpServers": false
