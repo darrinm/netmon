@@ -50,16 +50,12 @@ export class Display {
     // Build entire display in memory first
     const output: string[] = [];
     
-    // Header with centered title
+    // Compact header
     const title = '🌐 Network Monitor';
-    const padding = Math.max(0, Math.floor((termWidth - title.length) / 2));
-    output.push(' '.repeat(padding) + chalk.bold.cyan(title));
+    const updateInfo = `Updated: ${metric.timestamp.toLocaleTimeString()} | Session: ${sessionCollections}`;
+    const padding = Math.max(0, termWidth - title.length - updateInfo.length - 2);
+    output.push(chalk.bold.cyan(title) + ' '.repeat(padding) + chalk.gray(updateInfo));
     output.push(chalk.gray('─'.repeat(termWidth)));
-    output.push('');
-    
-    // Status line
-    output.push(chalk.gray(`Last Update: ${metric.timestamp.toLocaleString()}    Session: ${sessionCollections} collections`));
-    output.push('');
 
     // Status table
     const statusTable = new Table({
@@ -89,25 +85,39 @@ export class Display {
     // Statistics
     output.push(this.showStats(stats));
 
-    // Latency graph if we have enough data
-    if (recentMetrics.length > 10) {
+    // Calculate available space for graph
+    const currentLines = output.length + 2; // +2 for footer
+    const availableLines = termHeight - currentLines - 1;
+    
+    // Latency graph if we have enough data and space
+    if (recentMetrics.length > 10 && availableLines > 5) {
       output.push('');
       const graphWidth = Math.min(termWidth - 10, 80);
-      const graphLines = Graph.drawLatencyGraph(recentMetrics, graphWidth, 8);
+      const graphHeight = Math.min(8, availableLines - 2);
+      const graphLines = Graph.drawLatencyGraph(recentMetrics, graphWidth, graphHeight);
       output.push(...graphLines);
     }
 
-    // Footer with help text
-    const remainingLines = termHeight - output.length - 3;
-    if (remainingLines > 0) {
-      output.push('\n'.repeat(Math.max(0, remainingLines - 1)));
+    // Footer
+    const footerSpace = termHeight - output.length - 2;
+    if (footerSpace > 0) {
+      output.push('\n'.repeat(footerSpace));
     }
     
     output.push(chalk.gray('─'.repeat(termWidth)));
+    const interval = sessionCollections > 1 ? Math.round((metric.timestamp.getTime() - this.lastUpdateTime) / 1000) : 1;
     output.push(chalk.gray('Press Ctrl+C to exit  |  ' + 
-      `Monitoring ${metric.ping.host} every ${Math.round((metric.timestamp.getTime() - this.lastUpdateTime) / 1000)}s`));
+      `Monitoring ${metric.ping.host} every ${interval}s`));
     
     this.lastUpdateTime = metric.timestamp.getTime();
+
+    // Ensure we don't exceed terminal height
+    const totalLines = output.length;
+    if (totalLines > termHeight) {
+      // Trim from the middle (keep header and footer)
+      const toRemove = totalLines - termHeight + 1;
+      output.splice(termHeight - 10, toRemove);
+    }
 
     // Write everything at once
     console.log(output.join('\n'));
@@ -122,11 +132,13 @@ export class Display {
 
   static showStats(stats: Map<string, NetworkStats>): string {
     const output: string[] = [];
-    output.push(chalk.bold.cyan('\n📊 Network Statistics\n'));
+    output.push('');
+    output.push(chalk.bold.cyan('📊 Network Statistics'));
 
     const statsTable = new Table({
       head: ['Period', 'Uptime', 'Avg Latency', 'Packet Loss', 'Outages', 'Downtime', 'Samples'],
-      colWidths: [14, 9, 12, 12, 9, 11, 9]
+      colWidths: [14, 9, 12, 12, 9, 11, 9],
+      style: { 'padding-left': 0, 'padding-right': 0 }
     });
 
     stats.forEach((stat, period) => {
