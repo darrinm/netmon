@@ -9,7 +9,7 @@ import { MetricsStorage } from './storage';
 import { StatsAnalyzer } from './stats';
 import { Display } from './display';
 import { OutageTracker } from './outage-tracker';
-import { MonitorConfig } from './types';
+import { MonitorConfig, NetworkMetric, NetworkStats, OutageEvent } from './types';
 import { TerminalUtils } from './terminal-utils';
 
 const DEFAULT_CONFIG: MonitorConfig = {
@@ -55,6 +55,19 @@ program
     TerminalUtils.hideCursor();
     
     let sessionCollections = 0;
+    let lastMetric: NetworkMetric | null = null;
+    let lastStats: Map<string, NetworkStats> | null = null;
+    let lastOutage: OutageEvent | null = null;
+    let recentMetrics: NetworkMetric[] = [];
+    
+    // Handle terminal resize
+    const handleResize = () => {
+      if (lastMetric && lastStats) {
+        Display.showMonitoringDisplay(lastMetric, lastStats, sessionCollections, lastOutage, recentMetrics);
+      }
+    };
+    process.stdout.on('resize', handleResize);
+    
     monitor.start(async (metric) => {
       sessionCollections++;
       const outageEvent = outageTracker.processMetric(metric);
@@ -79,8 +92,18 @@ program
         ['All Time', StatsAnalyzer.analyze(allMetrics, 'All Time', allOutages)]
       ]);
       
+      // Store for resize handler and graph
+      lastMetric = metric;
+      lastStats = stats;
+      lastOutage = currentOutage;
+      
+      // Keep recent metrics for graph (last 5 minutes)
+      recentMetrics.push(metric);
+      const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000);
+      recentMetrics = recentMetrics.filter(m => m.timestamp >= fiveMinAgo);
+      
       // Single unified display update
-      Display.showMonitoringDisplay(metric, stats, sessionCollections, currentOutage);
+      Display.showMonitoringDisplay(metric, stats, sessionCollections, currentOutage, recentMetrics);
     });
 
     process.on('SIGINT', () => {

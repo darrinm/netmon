@@ -1,6 +1,7 @@
 import chalk from 'chalk';
 import Table from 'cli-table3';
 import { NetworkMetric, NetworkStats, OutageEvent } from './types';
+import { Graph } from './graph';
 
 export class Display {
   static formatLatency(ms: number): string {
@@ -36,17 +37,29 @@ export class Display {
     metric: NetworkMetric,
     stats: Map<string, NetworkStats>,
     sessionCollections: number,
-    currentOutage: OutageEvent | null
+    currentOutage: OutageEvent | null,
+    recentMetrics: NetworkMetric[] = []
   ): void {
     // Always move to home position and clear screen in alternate buffer
     process.stdout.write('\x1B[H\x1B[2J');
 
+    // Get terminal dimensions
+    const termWidth = process.stdout.columns || 80;
+    const termHeight = process.stdout.rows || 24;
+
     // Build entire display in memory first
     const output: string[] = [];
     
-    // Header
-    output.push(chalk.bold.cyan('🌐 Network Monitor - Live Status\n'));
-    output.push(chalk.gray(`Last Update: ${metric.timestamp.toLocaleString()}\n`));
+    // Header with centered title
+    const title = '🌐 Network Monitor';
+    const padding = Math.max(0, Math.floor((termWidth - title.length) / 2));
+    output.push(' '.repeat(padding) + chalk.bold.cyan(title));
+    output.push(chalk.gray('─'.repeat(termWidth)));
+    output.push('');
+    
+    // Status line
+    output.push(chalk.gray(`Last Update: ${metric.timestamp.toLocaleString()}    Session: ${sessionCollections} collections`));
+    output.push('');
 
     // Status table
     const statusTable = new Table({
@@ -69,18 +82,38 @@ export class Display {
     // Outage warning if active
     if (currentOutage) {
       const duration = Date.now() - currentOutage.startTime.getTime();
-      output.push(chalk.bold.red(`\n⚠️  ONGOING OUTAGE: ${this.formatDuration(Math.round(duration / 1000))}`));
+      output.push('');
+      output.push(chalk.bold.red(`⚠️  ONGOING OUTAGE: ${this.formatDuration(Math.round(duration / 1000))}`));
     }
-
-    // Session collections
-    output.push(chalk.gray(`\nSession Collections: ${sessionCollections}`));
 
     // Statistics
     output.push(this.showStats(stats));
 
+    // Latency graph if we have enough data
+    if (recentMetrics.length > 10) {
+      output.push('');
+      const graphWidth = Math.min(termWidth - 10, 80);
+      const graphLines = Graph.drawLatencyGraph(recentMetrics, graphWidth, 8);
+      output.push(...graphLines);
+    }
+
+    // Footer with help text
+    const remainingLines = termHeight - output.length - 3;
+    if (remainingLines > 0) {
+      output.push('\n'.repeat(Math.max(0, remainingLines - 1)));
+    }
+    
+    output.push(chalk.gray('─'.repeat(termWidth)));
+    output.push(chalk.gray('Press Ctrl+C to exit  |  ' + 
+      `Monitoring ${metric.ping.host} every ${Math.round((metric.timestamp.getTime() - this.lastUpdateTime) / 1000)}s`));
+    
+    this.lastUpdateTime = metric.timestamp.getTime();
+
     // Write everything at once
     console.log(output.join('\n'));
   }
+
+  private static lastUpdateTime: number = Date.now();
 
   static showCurrentStatus(metric: NetworkMetric): void {
     // This method is now deprecated in favor of showMonitoringDisplay
