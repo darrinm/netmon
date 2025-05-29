@@ -1,0 +1,83 @@
+# netmon - Network Quality Monitor
+
+A command-line utility that monitors your network connection quality and provides insights into performance over time.
+
+## Features
+
+- 🔍 Real-time network monitoring
+- 📊 Historical statistics for different time periods
+- 🎨 Color-coded status indicators
+- 💾 Persistent data storage
+- ⚡ Lightweight and efficient
+
+## Installation
+
+```bash
+npm install
+npm run build
+npm link  # Optional: to use 'netmon' command globally
+```
+
+## Quick Start
+
+Two convenient shell scripts are provided:
+
+### 1. Command-line Interface (`./netmon`)
+```bash
+./netmon              # Start monitoring
+./netmon stats        # Show statistics
+./netmon history      # Show history
+./netmon help         # Show help
+```
+
+### 2. Interactive Menu (`./netmon-menu`)
+```bash
+./netmon-menu         # Launch interactive menu
+```
+
+The interactive menu provides:
+- Easy navigation through all features
+- Quick network status checks
+- Configuration management
+- Visual feedback
+
+## Usage
+
+### Start Monitoring
+```bash
+npm run dev monitor
+# or after building:
+npm start monitor
+
+# With options:
+npm start monitor -- --host google.com --interval 60
+```
+
+### View Statistics
+```bash
+npm start stats
+npm start stats -- --period 1  # Last hour
+npm start stats -- --period 0  # All time
+```
+
+### View History
+```bash
+npm start history
+npm start history -- --number 50  # Show last 50 entries
+```
+
+### Clear Data
+```bash
+npm start clear
+```
+
+## Metrics Tracked
+
+- **Ping Latency**: Min, average, and max response times
+- **Packet Loss**: Percentage of lost packets
+- **DNS Response Time**: Time to resolve DNS queries
+- **Network Uptime**: Percentage of successful connections
+
+## Data Storage
+
+Metrics are stored in `~/.netmon/metrics.json` by default. You can specify a custom location using the `--data-file` option.

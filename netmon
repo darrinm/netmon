@@ -1,0 +1,117 @@
+#!/bin/bash
+
+# netmon - Network Monitor Frontend Script
+# Provides an easy interface to the network monitoring utility
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+NC='\033[0m' # No Color
+
+# Check if node is installed
+if ! command -v node &> /dev/null; then
+    echo -e "${RED}Error: Node.js is not installed${NC}"
+    echo "Please install Node.js to use netmon"
+    exit 1
+fi
+
+# Check if dependencies are installed
+if [ ! -d "node_modules" ]; then
+    echo -e "${YELLOW}First time setup detected...${NC}"
+    echo -e "${CYAN}Installing dependencies...${NC}"
+    npm install
+    echo -e "${GREEN}✓ Dependencies installed${NC}"
+    echo
+fi
+
+# Function to show help
+show_help() {
+    echo -e "${CYAN}netmon - Network Quality Monitor${NC}"
+    echo
+    echo -e "${GREEN}USAGE:${NC}"
+    echo "    netmon [COMMAND] [OPTIONS]"
+    echo
+    echo -e "${GREEN}COMMANDS:${NC}"
+    echo "    monitor    Start monitoring network connection (default)"
+    echo "    stats      Show network statistics"
+    echo "    history    Show recent monitoring history"
+    echo "    clear      Clear all monitoring data"
+    echo "    help       Show this help message"
+    echo
+    echo -e "${GREEN}EXAMPLES:${NC}"
+    echo "    netmon                    # Start monitoring with defaults"
+    echo "    netmon monitor -i 10      # Monitor every 10 seconds"
+    echo "    netmon monitor -h 1.1.1.1 # Monitor specific host"
+    echo "    netmon stats              # Show last 24h statistics"
+    echo "    netmon stats -p 1         # Show last hour statistics"
+    echo "    netmon history -n 50      # Show last 50 entries"
+    echo
+    echo -e "${GREEN}MONITOR OPTIONS:${NC}"
+    echo "    -h, --host <host>         Host to ping (default: 8.8.8.8)"
+    echo "    -i, --interval <seconds>  Monitoring interval (default: 30)"
+    echo
+    echo -e "${GREEN}STATS OPTIONS:${NC}"
+    echo "    -p, --period <hours>      Stats period in hours, 0 for all time (default: 24)"
+    echo
+    echo -e "${GREEN}HISTORY OPTIONS:${NC}"
+    echo "    -n, --number <count>      Number of entries to show (default: 20)"
+    echo
+}
+
+# Function to show status
+show_status() {
+    echo -e "${CYAN}🌐 Network Monitor${NC}"
+    echo -e "${GREEN}Ready to monitor your network connection${NC}"
+    echo
+}
+
+# Parse command
+COMMAND="${1:-monitor}"
+shift || true
+
+# Handle commands
+case "$COMMAND" in
+    monitor|mon|m)
+        show_status
+        echo -e "${BLUE}Starting network monitor...${NC}"
+        echo -e "${YELLOW}Press Ctrl+C to stop${NC}"
+        echo
+        exec npm run dev monitor -- "$@"
+        ;;
+    
+    stats|stat|s)
+        exec npm run dev stats -- "$@"
+        ;;
+    
+    history|hist|h)
+        exec npm run dev history -- "$@"
+        ;;
+    
+    clear|c)
+        echo -e "${YELLOW}Are you sure you want to clear all monitoring data? [y/N]${NC}"
+        read -r response
+        if [[ "$response" =~ ^[Yy]$ ]]; then
+            npm run dev clear -- "$@"
+            echo -e "${GREEN}✓ Data cleared${NC}"
+        else
+            echo -e "${BLUE}Cancelled${NC}"
+        fi
+        ;;
+    
+    help|--help|-h)
+        show_help
+        ;;
+    
+    *)
+        echo -e "${RED}Unknown command: $COMMAND${NC}"
+        echo
+        show_help
+        exit 1
+        ;;
+esac
