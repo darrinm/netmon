@@ -38,13 +38,8 @@ export class Display {
     sessionCollections: number,
     currentOutage: OutageEvent | null
   ): void {
-    if (this.isFirstRun) {
-      console.clear();
-      this.isFirstRun = false;
-    } else {
-      // Move to home and clear entire screen from cursor down
-      process.stdout.write('\x1B[H\x1B[0J');
-    }
+    // Always move to home position and clear screen in alternate buffer
+    process.stdout.write('\x1B[H\x1B[2J');
 
     // Build entire display in memory first
     const output: string[] = [];

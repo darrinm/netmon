@@ -23,6 +23,14 @@ export class TerminalUtils {
     process.stdout.write('\x1B[2J\x1B[H');
   }
 
+  static enterAlternateScreen(): void {
+    process.stdout.write('\x1B[?1049h');
+  }
+
+  static exitAlternateScreen(): void {
+    process.stdout.write('\x1B[?1049l');
+  }
+
   static updateDisplay(content: string): void {
     const lines = content.split('\n');
     const lineCount = lines.length;

@@ -50,7 +50,8 @@ program
     console.log(chalk.gray(`Data stored in: ${config.dataFile}`));
     console.log(chalk.gray('Press Ctrl+C to stop\n'));
 
-    // Hide cursor for cleaner display
+    // Enter alternate screen buffer and hide cursor
+    TerminalUtils.enterAlternateScreen();
     TerminalUtils.hideCursor();
     
     let sessionCollections = 0;
@@ -83,14 +84,16 @@ program
     });
 
     process.on('SIGINT', () => {
+      TerminalUtils.exitAlternateScreen();
       TerminalUtils.showCursor();
-      console.log(chalk.yellow('\n\n👋 Stopping monitor...'));
+      console.log(chalk.yellow('\n👋 Stopping monitor...'));
       monitor.stop();
       process.exit(0);
     });
 
-    // Ensure cursor is shown on other exit scenarios
+    // Ensure cleanup on other exit scenarios
     process.on('exit', () => {
+      TerminalUtils.exitAlternateScreen();
       TerminalUtils.showCursor();
     });
   });
