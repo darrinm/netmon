@@ -61,23 +61,10 @@ program
       
       if (outageEvent) {
         await storage.saveOutage(outageEvent);
-        if (!outageEvent.endTime) {
-          console.log(chalk.bold.red('\n🚨 OUTAGE DETECTED! 🚨\n'));
-        } else {
-          console.log(chalk.bold.green('\n✅ Connectivity Restored\n'));
-        }
+        // Outage alerts will be shown in the unified display
       }
-      
-      Display.showCurrentStatus(metric);
       
       const currentOutage = outageTracker.getCurrentOutage();
-      if (currentOutage) {
-        const duration = Date.now() - currentOutage.startTime.getTime();
-        console.log(chalk.bold.red(`\n⚠️  ONGOING OUTAGE: ${Display.formatDuration(Math.round(duration / 1000))}\n`));
-      }
-      
-      console.log(chalk.gray(`\nSession Collections: ${sessionCollections}`));
-      
       const allMetrics = storage.getMetrics();
       const last5min = StatsAnalyzer.getMetricsForPeriod(allMetrics, 0.0833); // 5 min = 0.0833 hours
       const lastHour = StatsAnalyzer.getMetricsForPeriod(allMetrics, 1);
@@ -91,7 +78,8 @@ program
         ['All Time', StatsAnalyzer.analyze(allMetrics, 'All Time', allOutages)]
       ]);
       
-      Display.showStats(stats);
+      // Single unified display update
+      Display.showMonitoringDisplay(metric, stats, sessionCollections, currentOutage);
     });
 
     process.on('SIGINT', () => {

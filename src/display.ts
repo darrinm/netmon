@@ -32,18 +32,28 @@ export class Display {
 
   private static isFirstRun = true;
 
-  static showCurrentStatus(metric: NetworkMetric): void {
+  static showMonitoringDisplay(
+    metric: NetworkMetric,
+    stats: Map<string, NetworkStats>,
+    sessionCollections: number,
+    currentOutage: OutageEvent | null
+  ): void {
     if (this.isFirstRun) {
-      // Clear screen only on first run
       console.clear();
       this.isFirstRun = false;
     } else {
-      // Move cursor to home position for updates
+      // Move to home and clear entire screen from cursor down
       process.stdout.write('\x1B[H\x1B[0J');
     }
-    console.log(chalk.bold.cyan('🌐 Network Monitor - Live Status\n'));
-    console.log(chalk.gray(`Last Update: ${metric.timestamp.toLocaleString()}\n`));
 
+    // Build entire display in memory first
+    const output: string[] = [];
+    
+    // Header
+    output.push(chalk.bold.cyan('🌐 Network Monitor - Live Status\n'));
+    output.push(chalk.gray(`Last Update: ${metric.timestamp.toLocaleString()}\n`));
+
+    // Status table
     const statusTable = new Table({
       head: ['Metric', 'Value', 'Status'],
       colWidths: [20, 20, 15]
@@ -59,11 +69,32 @@ export class Display {
       ['DNS Response', `${metric.dns.responseTime}ms`, dnsStatus]
     );
 
-    console.log(statusTable.toString());
+    output.push(statusTable.toString());
+
+    // Outage warning if active
+    if (currentOutage) {
+      const duration = Date.now() - currentOutage.startTime.getTime();
+      output.push(chalk.bold.red(`\n⚠️  ONGOING OUTAGE: ${this.formatDuration(Math.round(duration / 1000))}`));
+    }
+
+    // Session collections
+    output.push(chalk.gray(`\nSession Collections: ${sessionCollections}`));
+
+    // Statistics
+    output.push(this.showStats(stats));
+
+    // Write everything at once
+    console.log(output.join('\n'));
   }
 
-  static showStats(stats: Map<string, NetworkStats>): void {
-    console.log(chalk.bold.cyan('\n📊 Network Statistics\n'));
+  static showCurrentStatus(metric: NetworkMetric): void {
+    // This method is now deprecated in favor of showMonitoringDisplay
+    console.log('Use showMonitoringDisplay instead');
+  }
+
+  static showStats(stats: Map<string, NetworkStats>): string {
+    const output: string[] = [];
+    output.push(chalk.bold.cyan('\n📊 Network Statistics\n'));
 
     const statsTable = new Table({
       head: ['Period', 'Uptime', 'Avg Latency', 'Packet Loss', 'Outages', 'Downtime', 'Samples'],
@@ -86,7 +117,8 @@ export class Display {
       ]);
     });
 
-    console.log(statsTable.toString());
+    output.push(statsTable.toString());
+    return output.join('\n');
   }
 
   static showDetailedStats(stats: NetworkStats): void {
