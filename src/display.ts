@@ -46,16 +46,15 @@ export class Display {
     // Get terminal dimensions
     const termWidth = process.stdout.columns || 80;
     const termHeight = process.stdout.rows || 24;
-
-    // Build entire display in memory first
-    const output: string[] = [];
     
     // Compact header
     const title = '🌐 Network Monitor';
     const updateInfo = `Updated: ${metric.timestamp.toLocaleTimeString()} | Session: ${sessionCollections}`;
     const padding = Math.max(0, termWidth - title.length - updateInfo.length - 2);
-    output.push(chalk.bold.cyan(title) + ' '.repeat(padding) + chalk.gray(updateInfo));
-    output.push(chalk.gray('─'.repeat(termWidth)));
+    
+    // Write header directly
+    console.log(chalk.bold.cyan(title) + ' '.repeat(padding) + chalk.gray(updateInfo));
+    console.log(chalk.gray('─'.repeat(termWidth)));
 
     // Status table
     const statusTable = new Table({
@@ -73,54 +72,39 @@ export class Display {
       ['DNS Response', `${metric.dns.responseTime}ms`, dnsStatus]
     );
 
-    output.push(statusTable.toString());
+    console.log(statusTable.toString());
 
     // Outage warning if active
     if (currentOutage) {
       const duration = Date.now() - currentOutage.startTime.getTime();
-      output.push('');
-      output.push(chalk.bold.red(`⚠️  ONGOING OUTAGE: ${this.formatDuration(Math.round(duration / 1000))}`));
+      console.log();
+      console.log(chalk.bold.red(`⚠️  ONGOING OUTAGE: ${this.formatDuration(Math.round(duration / 1000))}`));
     }
 
     // Statistics
-    output.push(this.showStats(stats));
+    console.log(this.showStats(stats));
 
-    // Calculate available space for graph
-    const currentLines = output.length + 2; // +2 for footer
-    const availableLines = termHeight - currentLines - 1;
-    
-    // Latency graph if we have enough data and space
-    if (recentMetrics.length > 10 && availableLines > 5) {
-      output.push('');
+    // Latency graph if we have enough data
+    if (recentMetrics.length > 10 && termHeight > 30) {
+      console.log();
       const graphWidth = Math.min(termWidth - 10, 80);
-      const graphHeight = Math.min(8, availableLines - 2);
+      const graphHeight = Math.min(8, Math.max(5, termHeight - 25));
       const graphLines = Graph.drawLatencyGraph(recentMetrics, graphWidth, graphHeight);
-      output.push(...graphLines);
+      console.log(graphLines.join('\n'));
     }
 
-    // Footer
-    const footerSpace = termHeight - output.length - 2;
-    if (footerSpace > 0) {
-      output.push('\n'.repeat(footerSpace));
+    // Move to bottom for footer
+    const currentRow = 20 + (recentMetrics.length > 10 ? 10 : 0);
+    if (currentRow < termHeight - 2) {
+      process.stdout.write(`\x1B[${termHeight - 1};1H`);
     }
     
-    output.push(chalk.gray('─'.repeat(termWidth)));
+    console.log(chalk.gray('─'.repeat(termWidth)));
     const interval = sessionCollections > 1 ? Math.round((metric.timestamp.getTime() - this.lastUpdateTime) / 1000) : 1;
-    output.push(chalk.gray('Press Ctrl+C to exit  |  ' + 
+    console.log(chalk.gray('Press Ctrl+C to exit  |  ' + 
       `Monitoring ${metric.ping.host} every ${interval}s`));
     
     this.lastUpdateTime = metric.timestamp.getTime();
-
-    // Ensure we don't exceed terminal height
-    const totalLines = output.length;
-    if (totalLines > termHeight) {
-      // Trim from the middle (keep header and footer)
-      const toRemove = totalLines - termHeight + 1;
-      output.splice(termHeight - 10, toRemove);
-    }
-
-    // Write everything at once
-    console.log(output.join('\n'));
   }
 
   private static lastUpdateTime: number = Date.now();
