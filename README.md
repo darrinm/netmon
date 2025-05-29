@@ -2,6 +2,8 @@
 
 A command-line utility that monitors your network connection quality and provides insights into performance over time.
 
+![screenshot 2025-05-28 at 18 40 59@2x](https://github.com/user-attachments/assets/b503cab5-af51-4657-b8a8-35ad9cf7fbdc)
+
 ## Features
 
 - 🔍 Real-time network monitoring
