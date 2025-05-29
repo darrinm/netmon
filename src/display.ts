@@ -30,9 +30,18 @@ export class Display {
     return `${hours}h ${minutes}m`;
   }
 
+  private static isFirstRun = true;
+
   static showCurrentStatus(metric: NetworkMetric): void {
-    console.clear();
-    console.log(chalk.bold.cyan('\n🌐 Network Monitor - Live Status\n'));
+    if (this.isFirstRun) {
+      // Clear screen only on first run
+      console.clear();
+      this.isFirstRun = false;
+    } else {
+      // Move cursor to home position for updates
+      process.stdout.write('\x1B[H\x1B[0J');
+    }
+    console.log(chalk.bold.cyan('🌐 Network Monitor - Live Status\n'));
     console.log(chalk.gray(`Last Update: ${metric.timestamp.toLocaleString()}\n`));
 
     const statusTable = new Table({

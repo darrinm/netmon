@@ -10,6 +10,7 @@ import { StatsAnalyzer } from './stats';
 import { Display } from './display';
 import { OutageTracker } from './outage-tracker';
 import { MonitorConfig } from './types';
+import { TerminalUtils } from './terminal-utils';
 
 const DEFAULT_CONFIG: MonitorConfig = {
   pingHost: '8.8.8.8',
@@ -49,6 +50,9 @@ program
     console.log(chalk.gray(`Data stored in: ${config.dataFile}`));
     console.log(chalk.gray('Press Ctrl+C to stop\n'));
 
+    // Hide cursor for cleaner display
+    TerminalUtils.hideCursor();
+    
     let sessionCollections = 0;
     monitor.start(async (metric) => {
       sessionCollections++;
@@ -91,9 +95,15 @@ program
     });
 
     process.on('SIGINT', () => {
+      TerminalUtils.showCursor();
       console.log(chalk.yellow('\n\n👋 Stopping monitor...'));
       monitor.stop();
       process.exit(0);
+    });
+
+    // Ensure cursor is shown on other exit scenarios
+    process.on('exit', () => {
+      TerminalUtils.showCursor();
     });
   });
 
