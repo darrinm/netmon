@@ -1,6 +1,7 @@
 {
   "name": "netmon",
   "version": "1.0.0",
+  "description": "A full-screen terminal application for monitoring network connection quality",
   "main": "dist/index.js",
   "bin": {
     "netmon": "./dist/cli.js"
@@ -12,10 +13,17 @@
     "watch": "tsc -w",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "description": "",
+  "keywords": ["network", "monitoring", "ping", "latency", "terminal", "cli", "dashboard"],
+  "author": "Darrin Massena",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/darrinm/netmon.git"
+  },
+  "bugs": {
+    "url": "https://github.com/darrinm/netmon/issues"
+  },
+  "homepage": "https://github.com/darrinm/netmon#readme",
   "devDependencies": {
     "@types/node": "^22.15.24",
     "tsx": "^4.19.4",
