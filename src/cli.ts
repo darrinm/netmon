@@ -60,6 +60,14 @@ program
     let lastOutage: OutageEvent | null = null;
     let recentMetrics: NetworkMetric[] = [];
     
+    // Pre-populate with recent historical data if available
+    const existingMetrics = storage.getMetrics();
+    const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000);
+    recentMetrics = existingMetrics.filter(m => {
+      const timestamp = m.timestamp instanceof Date ? m.timestamp : new Date(m.timestamp);
+      return timestamp >= fiveMinAgo;
+    });
+    
     // Handle terminal resize
     const handleResize = () => {
       if (lastMetric && lastStats) {
@@ -100,7 +108,11 @@ program
       // Keep recent metrics for graph (last 5 minutes)
       recentMetrics.push(metric);
       const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000);
-      recentMetrics = recentMetrics.filter(m => m.timestamp >= fiveMinAgo);
+      recentMetrics = recentMetrics.filter(m => {
+        // Ensure timestamp is a Date object for comparison
+        const timestamp = m.timestamp instanceof Date ? m.timestamp : new Date(m.timestamp);
+        return timestamp >= fiveMinAgo;
+      });
       
       // Single unified display update
       Display.showMonitoringDisplay(metric, stats, sessionCollections, currentOutage, recentMetrics);
