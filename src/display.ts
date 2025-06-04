@@ -5,10 +5,11 @@ import { Graph } from './graph';
 
 export class Display {
   static formatLatency(ms: number): string {
-    if (ms === 0) return chalk.gray('N/A');
-    if (ms < 50) return chalk.green(`${ms}ms`);
-    if (ms < 100) return chalk.yellow(`${ms}ms`);
-    return chalk.red(`${ms}ms`);
+    if (ms === 0 || isNaN(ms) || !isFinite(ms)) return chalk.gray('N/A');
+    const rounded = Math.round(ms);
+    if (rounded < 50) return chalk.green(`${rounded}ms`);
+    if (rounded < 100) return chalk.yellow(`${rounded}ms`);
+    return chalk.red(`${rounded}ms`);
   }
 
   static formatPacketLoss(loss: number): string {
@@ -56,41 +57,31 @@ export class Display {
     console.log(chalk.bold.cyan(title) + ' '.repeat(padding) + chalk.gray(updateInfo));
     console.log(chalk.gray('─'.repeat(termWidth)));
 
-    // Status table
-    const statusTable = new Table({
-      head: ['Metric', 'Value', 'Status'],
-      colWidths: [20, 20, 15]
-    });
-
-    const pingStatus = metric.ping.packetLoss === 100 ? chalk.red('✗ Down') : chalk.green('✓ Up');
-    const dnsStatus = metric.dns.success ? chalk.green('✓ OK') : chalk.red('✗ Failed');
-
-    statusTable.push(
-      ['Ping Host', metric.ping.host, pingStatus],
-      ['Latency (avg)', this.formatLatency(metric.ping.avg), ''],
-      ['Packet Loss', this.formatPacketLoss(metric.ping.packetLoss), ''],
-      ['DNS Response', `${metric.dns.responseTime}ms`, dnsStatus]
-    );
-
-    console.log(statusTable.toString());
-
     // Outage warning if active
     if (currentOutage) {
       const duration = Date.now() - currentOutage.startTime.getTime();
-      console.log();
       console.log(chalk.bold.red(`⚠️  ONGOING OUTAGE: ${this.formatDuration(Math.round(duration / 1000))}`));
     }
 
-    // Statistics
-    console.log(this.showStats(stats));
+    // Statistics with current metrics
+    console.log(this.showStatsWithCurrent(metric, stats));
 
-    // Latency graph if we have enough data
-    if (recentMetrics.length > 10 && termHeight > 30) {
+    // Graphs if we have enough data and terminal space
+    if (recentMetrics.length > 10 && termHeight > 28) {
       console.log();
       const graphWidth = Math.min(termWidth - 10, 80);
-      const graphHeight = Math.min(8, Math.max(5, termHeight - 25));
-      const graphLines = Graph.drawLatencyGraph(recentMetrics, graphWidth, graphHeight);
-      console.log(graphLines.join('\n'));
+      
+      // Latency graph
+      const latencyGraphHeight = Math.min(8, Math.max(5, Math.floor((termHeight - 20) / 2)));
+      const latencyGraphLines = Graph.drawLatencyGraph(recentMetrics, graphWidth, latencyGraphHeight);
+      console.log(latencyGraphLines.join('\n'));
+      
+      console.log(); // Space between graphs
+      
+      // Packet loss graph
+      const packetLossGraphHeight = Math.min(6, Math.max(4, Math.floor((termHeight - 20) / 2)));
+      const packetLossGraphLines = Graph.drawPacketLossGraph(recentMetrics, graphWidth, packetLossGraphHeight);
+      console.log(packetLossGraphLines.join('\n'));
     }
 
     // Always position cursor at bottom-2 for footer (leaving room for 2 footer lines)
@@ -138,6 +129,57 @@ export class Display {
           ? chalk.red(this.formatDuration(stat.outageStats.totalDuration))
           : chalk.green('0s'),
         stat.samples.toString()
+      ]);
+    });
+
+    output.push(statsTable.toString());
+    return output.join('\n');
+  }
+
+  static showStatsWithCurrent(metric: NetworkMetric, stats: Map<string, NetworkStats>): string {
+    const output: string[] = [];
+    output.push('');
+    output.push(chalk.bold.cyan('📊 Network Statistics'));
+
+    const statsTable = new Table({
+      head: ['Period', 'Status', 'Latency', 'Packet Loss', 'Outages', 'Downtime', 'DNS', 'Host'],
+      colWidths: [14, 8, 10, 12, 9, 11, 7, 10],
+      style: { 'padding-left': 0, 'padding-right': 0 }
+    });
+
+    // Add current metrics row
+    const currentStatus = metric.ping.packetLoss === 100 ? chalk.red('✗ Down') : chalk.green('✓ Up');
+    const dnsStatus = metric.dns.success ? chalk.green('✓') : chalk.red('✗');
+    
+    statsTable.push([
+      chalk.bold('Now'),
+      currentStatus,
+      this.formatLatency(metric.ping.avg),
+      this.formatPacketLoss(metric.ping.packetLoss),
+      '-',
+      '-',
+      dnsStatus,
+      metric.ping.host
+    ]);
+
+    // Add historical stats
+    stats.forEach((stat, period) => {
+      const uptime = stat.pingStats.uptime;
+      const statusIndicator = uptime >= 99 ? chalk.green('↑') : uptime >= 95 ? chalk.yellow('↕') : chalk.red('↓');
+      
+      statsTable.push([
+        period,
+        `${statusIndicator} ${this.formatUptime(uptime)}`,
+        this.formatLatency(stat.pingStats.avgLatency),
+        this.formatPacketLoss(stat.pingStats.avgPacketLoss),
+        stat.outageStats.totalOutages > 0 
+          ? chalk.red(stat.outageStats.totalOutages.toString())
+          : chalk.green('0'),
+        stat.outageStats.totalDuration > 0
+          ? chalk.red(this.formatDuration(stat.outageStats.totalDuration))
+          : chalk.green('0s'),
+        `${stat.dnsStats.successRate.toFixed(0)}%`,
+        ''
       ]);
     });
 

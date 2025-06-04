@@ -18,12 +18,19 @@ export class NetworkMonitor {
         extra: ['-c', '5']
       });
 
+      // Helper to safely parse float values
+      const safeParseFloat = (value: any, defaultValue: number = 0): number => {
+        if (value === undefined || value === null || value === '') return defaultValue;
+        const parsed = parseFloat(value);
+        return isNaN(parsed) ? defaultValue : parsed;
+      };
+
       return {
         host: this.config.pingHost,
-        min: res.min ? parseFloat(res.min) : 0,
-        avg: res.avg ? parseFloat(res.avg) : 0,
-        max: res.max ? parseFloat(res.max) : 0,
-        packetLoss: res.packetLoss ? parseFloat(res.packetLoss) : 100
+        min: safeParseFloat(res.min, 0),
+        avg: safeParseFloat(res.avg, 0),
+        max: safeParseFloat(res.max, 0),
+        packetLoss: res.packetLoss !== undefined ? safeParseFloat(res.packetLoss, 100) : 100
       };
     } catch (error) {
       return {
