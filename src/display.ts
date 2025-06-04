@@ -40,8 +40,8 @@ export class Display {
     currentOutage: OutageEvent | null,
     recentMetrics: NetworkMetric[] = []
   ): void {
-    // Always move to home position and clear screen in alternate buffer
-    process.stdout.write('\x1B[H\x1B[2J');
+    // Move to home position without clearing (prevents flashing)
+    process.stdout.write('\x1B[H');
 
     // Get terminal dimensions
     const termWidth = process.stdout.columns || 80;
@@ -93,11 +93,11 @@ export class Display {
       console.log(graphLines.join('\n'));
     }
 
-    // Move to bottom for footer
-    const currentRow = 20 + (recentMetrics.length > 10 ? 10 : 0);
-    if (currentRow < termHeight - 2) {
-      process.stdout.write(`\x1B[${termHeight - 1};1H`);
-    }
+    // Always position cursor at bottom-2 for footer (leaving room for 2 footer lines)
+    process.stdout.write(`\x1B[${termHeight - 2};1H`);
+    
+    // Clear from cursor to end of screen before drawing footer
+    process.stdout.write('\x1B[J');
     
     console.log(chalk.gray('─'.repeat(termWidth)));
     const interval = sessionCollections > 1 ? Math.round((metric.timestamp.getTime() - this.lastUpdateTime) / 1000) : 1;

@@ -31,10 +31,23 @@ export class Graph {
       const label = isNaN(yValue) ? '   0' : yValue.toFixed(0).padStart(4);
       let line = chalk.gray(`${label} │`);
       
-      // Sample the data to fit the width
-      const step = Math.max(1, Math.floor(metrics.length / width));
+      // Sample the data to fit the width - ensure we always show the most recent data
       for (let col = 0; col < width; col++) {
-        const index = Math.min(col * step, metrics.length - 1);
+        let index: number;
+        if (metrics.length <= width) {
+          // If we have fewer points than width, show all points left-aligned
+          index = col < metrics.length ? col : -1;
+        } else {
+          // If we have more points than width, sample evenly but always include recent data
+          const startIndex = metrics.length - width;
+          index = startIndex + col;
+        }
+        
+        if (index < 0 || index >= metrics.length) {
+          line += ' ';
+          continue;
+        }
+        
         const latency = latencies[index];
         
         // Handle outage (0 latency) specially
@@ -71,15 +84,18 @@ export class Graph {
     // Draw X-axis
     output.push(chalk.gray('     └' + '─'.repeat(width)));
     
-    // Time labels
-    const oldestTime = metrics[0].timestamp;
-    const newestTime = metrics[metrics.length - 1].timestamp;
-    const duration = newestTime.getTime() - oldestTime.getTime();
-    const durationMin = Math.round(duration / 60000);
-    
-    const timeLabel = `${durationMin} min ago ← Time → now`;
-    const padding = Math.max(0, width - timeLabel.length + 6);
-    output.push(chalk.gray(' '.repeat(6) + timeLabel));
+    // Time labels - show the actual time range being displayed
+    const displayedMetrics = metrics.length > width ? metrics.slice(-width) : metrics;
+    if (displayedMetrics.length > 0) {
+      const oldestTime = displayedMetrics[0].timestamp;
+      const newestTime = displayedMetrics[displayedMetrics.length - 1].timestamp;
+      const duration = newestTime.getTime() - oldestTime.getTime();
+      const durationMin = Math.round(duration / 60000);
+      
+      const timeLabel = durationMin > 0 ? `${durationMin} min ago ← Time → now` : 'Time → now';
+      const padding = Math.max(0, width - timeLabel.length + 6);
+      output.push(chalk.gray(' '.repeat(6) + timeLabel));
+    }
     
     return output;
   }

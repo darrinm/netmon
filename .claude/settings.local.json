@@ -15,7 +15,9 @@
       "Bash(gh repo create:*)",
       "Bash(ls:*)",
       "Bash(jq length:*)",
-      "Bash(jq:*)"
+      "Bash(jq:*)",
+      "WebFetch(domain:docs.anthropic.com)",
+      "Bash(rg:*)"
     ]
   },
   "enableAllProjectMcpServers": false
