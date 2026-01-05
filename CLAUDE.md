@@ -44,15 +44,16 @@ This is a full-screen terminal application for monitoring network connection qua
 - Full-screen terminal UI with alternate screen buffer
 - Real-time monitoring with smooth, flicker-free updates
 - Automatic outage detection and duration tracking
-- ASCII latency graph for visual trend analysis
+- ASCII latency and packet loss graphs for visual trend analysis
 - Multiple time period views (5 min, 1 hour, 24 hours, all time)
 - Color-coded status indicators (green < 50ms, yellow < 100ms, red ≥ 100ms)
 - Terminal resize handling
 - Session collection counter
+- File locking to prevent multiple instances from corrupting data
 
 ### Display Layout
 1. Header: Title + update time + session count
-2. Status table: Current metrics
-3. Statistics table: Multi-period performance data
-4. Latency graph: 5-minute trend visualization
+2. Statistics table: Current metrics (first row) + multi-period performance data
+3. Latency graph: 5-minute trend visualization
+4. Packet loss graph: 5-minute trend visualization
 5. Footer: Help text and monitoring info

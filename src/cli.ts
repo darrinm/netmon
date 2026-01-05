@@ -41,10 +41,18 @@ program
     const monitor = new NetworkMonitor(config);
     const storage = new MetricsStorage(config.dataFile);
     const outageTracker = new OutageTracker();
-    
+
     await storage.init();
+
+    const hasLock = await storage.acquireLock();
+    if (!hasLock) {
+      console.log(chalk.red('Another instance of netmon is already running.'));
+      console.log(chalk.gray('Only one monitor instance can run at a time to prevent data corruption.'));
+      process.exit(1);
+    }
+
     outageTracker.loadOutages(storage.getOutages());
-    
+
     console.log(chalk.bold.green('🚀 Starting network monitor...'));
     console.log(chalk.gray(`Monitoring ${config.pingHost} every ${options.interval}s`));
     console.log(chalk.gray(`Data stored in: ${config.dataFile}`));
@@ -53,7 +61,8 @@ program
     // Enter alternate screen buffer and hide cursor
     TerminalUtils.enterAlternateScreen();
     TerminalUtils.hideCursor();
-    
+
+    let cleanedUp = false;
     let sessionCollections = 0;
     let lastMetric: NetworkMetric | null = null;
     let lastStats: Map<string, NetworkStats> | null = null;
@@ -118,18 +127,29 @@ program
       Display.showMonitoringDisplay(metric, stats, sessionCollections, currentOutage, recentMetrics);
     });
 
-    process.on('SIGINT', () => {
+    const cleanup = async () => {
+      if (cleanedUp) return;
+      cleanedUp = true;
+      process.stdout.removeListener('resize', handleResize);
       TerminalUtils.exitAlternateScreen();
       TerminalUtils.showCursor();
+      await storage.releaseLock();
+    };
+
+    process.on('SIGINT', async () => {
+      await cleanup();
       console.log(chalk.yellow('\n👋 Stopping monitor...'));
       monitor.stop();
       process.exit(0);
     });
 
-    // Ensure cleanup on other exit scenarios
     process.on('exit', () => {
-      TerminalUtils.exitAlternateScreen();
-      TerminalUtils.showCursor();
+      if (!cleanedUp) {
+        cleanedUp = true;
+        process.stdout.removeListener('resize', handleResize);
+        TerminalUtils.exitAlternateScreen();
+        TerminalUtils.showCursor();
+      }
     });
   });
 

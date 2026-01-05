@@ -100,11 +100,6 @@ export class Display {
 
   private static lastUpdateTime: number = Date.now();
 
-  static showCurrentStatus(metric: NetworkMetric): void {
-    // This method is now deprecated in favor of showMonitoringDisplay
-    console.log('Use showMonitoringDisplay instead');
-  }
-
   static showStats(stats: Map<string, NetworkStats>): string {
     const output: string[] = [];
     output.push('');

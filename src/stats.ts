@@ -114,6 +114,9 @@ export class StatsAnalyzer {
     hours: number
   ): NetworkMetric[] {
     const since = new Date(Date.now() - hours * 60 * 60 * 1000);
-    return metrics.filter(m => m.timestamp >= since);
+    return metrics.filter(m => {
+      const timestamp = m.timestamp instanceof Date ? m.timestamp : new Date(m.timestamp);
+      return timestamp >= since;
+    });
   }
 }
