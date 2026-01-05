@@ -31,7 +31,8 @@ This is a full-screen terminal application for monitoring network connection qua
 5. **Display** (`src/display.ts`) - Full-screen terminal UI with live updates and no flicker
 6. **Graph** (`src/graph.ts`) - ASCII graph generator for latency visualization
 7. **TerminalUtils** (`src/terminal-utils.ts`) - Terminal control utilities for cursor and screen management
-8. **CLI** (`src/cli.ts`) - Commander-based CLI interface with alternate screen buffer support
+8. **Notifier** (`src/notifier.ts`) - Desktop notifications for outage start/end events
+9. **CLI** (`src/cli.ts`) - Commander-based CLI interface with alternate screen buffer support
 
 ### Data Flow
 1. NetworkMonitor collects metrics at specified intervals
@@ -44,6 +45,7 @@ This is a full-screen terminal application for monitoring network connection qua
 - Full-screen terminal UI with alternate screen buffer
 - Real-time monitoring with smooth, flicker-free updates
 - Automatic outage detection and duration tracking
+- Desktop notifications on outage start/end (disable with `--no-notify`)
 - ASCII latency and packet loss graphs for visual trend analysis
 - Multiple time period views (5 min, 1 hour, 24 hours, all time)
 - Color-coded status indicators (green < 50ms, yellow < 100ms, red ≥ 100ms)

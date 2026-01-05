@@ -13,7 +13,15 @@
     "watch": "tsc -w",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "keywords": ["network", "monitoring", "ping", "latency", "terminal", "cli", "dashboard"],
+  "keywords": [
+    "network",
+    "monitoring",
+    "ping",
+    "latency",
+    "terminal",
+    "cli",
+    "dashboard"
+  ],
   "author": "Darrin Massena",
   "license": "MIT",
   "repository": {
@@ -26,6 +34,7 @@
   "homepage": "https://github.com/darrinm/netmon#readme",
   "devDependencies": {
     "@types/node": "^22.15.24",
+    "@types/node-notifier": "^8.0.5",
     "tsx": "^4.19.4",
     "typescript": "^5.8.3"
   },
@@ -33,6 +42,7 @@
     "chalk": "^5.4.1",
     "cli-table3": "^0.6.5",
     "commander": "^14.0.0",
+    "node-notifier": "^10.0.1",
     "ping": "^0.4.4",
     "systeminformation": "^5.27.1"
   }

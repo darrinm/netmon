@@ -9,6 +9,7 @@ import { MetricsStorage } from './storage';
 import { StatsAnalyzer } from './stats';
 import { Display } from './display';
 import { OutageTracker } from './outage-tracker';
+import { Notifier } from './notifier';
 import { MonitorConfig, NetworkMetric, NetworkStats, OutageEvent } from './types';
 import { TerminalUtils } from './terminal-utils';
 
@@ -30,6 +31,7 @@ program
   .option('-h, --host <host>', 'Host to ping', DEFAULT_CONFIG.pingHost)
   .option('-i, --interval <seconds>', 'Monitoring interval in seconds', '30')
   .option('-d, --data-file <path>', 'Data file path', DEFAULT_CONFIG.dataFile)
+  .option('--no-notify', 'Disable desktop notifications')
   .action(async (options) => {
     const config: MonitorConfig = {
       pingHost: options.host,
@@ -41,6 +43,7 @@ program
     const monitor = new NetworkMonitor(config);
     const storage = new MetricsStorage(config.dataFile);
     const outageTracker = new OutageTracker();
+    const notifier = new Notifier({ enabled: options.notify });
 
     await storage.init();
 
@@ -56,6 +59,7 @@ program
     console.log(chalk.bold.green('🚀 Starting network monitor...'));
     console.log(chalk.gray(`Monitoring ${config.pingHost} every ${options.interval}s`));
     console.log(chalk.gray(`Data stored in: ${config.dataFile}`));
+    console.log(chalk.gray(`Desktop notifications: ${options.notify ? 'enabled' : 'disabled'}`));
     console.log(chalk.gray('Press Ctrl+C to stop\n'));
 
     // Enter alternate screen buffer and hide cursor
@@ -92,7 +96,12 @@ program
       
       if (outageEvent) {
         await storage.saveOutage(outageEvent);
-        // Outage alerts will be shown in the unified display
+
+        if (outageEvent.endTime) {
+          notifier.outageEnded(outageEvent, config.pingHost);
+        } else {
+          notifier.outageStarted(outageEvent, config.pingHost);
+        }
       }
       
       const currentOutage = outageTracker.getCurrentOutage();
