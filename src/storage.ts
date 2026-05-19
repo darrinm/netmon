@@ -72,7 +72,8 @@ export class MetricsStorage {
           .map((o: any) => ({
             ...o,
             startTime: new Date(o.startTime),
-            endTime: o.endTime ? new Date(o.endTime) : undefined
+            endTime: o.endTime ? new Date(o.endTime) : undefined,
+            lastUpdateTime: o.lastUpdateTime ? new Date(o.lastUpdateTime) : undefined
           }));
 
         if (this.outages.length < parsedOutages.length) {

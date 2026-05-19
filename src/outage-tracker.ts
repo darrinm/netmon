@@ -1,6 +1,10 @@
 import { NetworkMetric, OutageEvent } from './types';
 
 export class OutageTracker {
+  // How stale an ongoing outage can be on load before we close it instead of resuming.
+  // We can't claim downtime that occurred while the monitor wasn't running.
+  private static readonly STALE_OUTAGE_MS = 5 * 60 * 1000;
+
   private currentOutage: OutageEvent | null = null;
   private outages: OutageEvent[] = [];
   private outageThreshold = {
@@ -8,6 +12,7 @@ export class OutageTracker {
     consecutiveFailures: 2
   };
   private consecutiveFailures = 0;
+  private firstFailureMetric: NetworkMetric | null = null;
 
   processMetric(metric: NetworkMetric): OutageEvent | null {
     const isOutage = this.isOutageCondition(metric);
@@ -15,12 +20,18 @@ export class OutageTracker {
 
     if (isOutage) {
       this.consecutiveFailures++;
-      
-      if (!this.currentOutage && this.consecutiveFailures >= this.outageThreshold.consecutiveFailures) {
-        this.currentOutage = this.startOutage(metric);
+      if (!this.firstFailureMetric) {
+        this.firstFailureMetric = metric;
+      }
+
+      if (this.currentOutage) {
+        this.currentOutage.lastUpdateTime = metric.timestamp;
+      } else if (this.consecutiveFailures >= this.outageThreshold.consecutiveFailures) {
+        this.currentOutage = this.startOutage(this.firstFailureMetric, metric);
         return this.currentOutage;
       }
     } else {
+      this.firstFailureMetric = null;
       if (this.currentOutage) {
         const endedOutage = this.endOutage(metric);
         this.consecutiveFailures = 0;
@@ -40,14 +51,15 @@ export class OutageTracker {
     return hasNoConnectivity || (hasHighPacketLoss && hasDnsFailure);
   }
 
-  private startOutage(metric: NetworkMetric): OutageEvent {
+  private startOutage(firstFailure: NetworkMetric, latestFailure: NetworkMetric): OutageEvent {
     const outage: OutageEvent = {
-      id: `outage-${Date.now()}`,
-      startTime: metric.timestamp,
-      type: metric.ping.packetLoss === 100 ? 'connectivity' : 'partial',
+      id: `outage-${firstFailure.timestamp.getTime()}`,
+      startTime: firstFailure.timestamp,
+      lastUpdateTime: latestFailure.timestamp,
+      type: firstFailure.ping.packetLoss === 100 ? 'connectivity' : 'partial',
       metrics: {
-        packetLoss: metric.ping.packetLoss,
-        dnsFailure: !metric.dns.success
+        packetLoss: firstFailure.ping.packetLoss,
+        dnsFailure: !firstFailure.dns.success
       }
     };
 
@@ -83,17 +95,29 @@ export class OutageTracker {
     this.outages = [];
     this.currentOutage = null;
     this.consecutiveFailures = 0;
+    this.firstFailureMetric = null;
   }
 
   loadOutages(outages: OutageEvent[]): void {
     this.outages = outages.map(o => ({
       ...o,
       startTime: new Date(o.startTime),
-      endTime: o.endTime ? new Date(o.endTime) : undefined
+      endTime: o.endTime ? new Date(o.endTime) : undefined,
+      lastUpdateTime: o.lastUpdateTime ? new Date(o.lastUpdateTime) : undefined
     }));
 
     const ongoingOutage = this.outages.find(o => !o.endTime);
-    if (ongoingOutage) {
+    if (!ongoingOutage) return;
+
+    const lastActivity = ongoingOutage.lastUpdateTime ?? ongoingOutage.startTime;
+    const staleness = Date.now() - lastActivity.getTime();
+
+    if (staleness > OutageTracker.STALE_OUTAGE_MS) {
+      // Monitor wasn't running for too long to credibly extend this outage; close it
+      // at the last observed activity so stats don't double-count the offline gap.
+      ongoingOutage.endTime = lastActivity;
+      ongoingOutage.duration = lastActivity.getTime() - ongoingOutage.startTime.getTime();
+    } else {
       this.currentOutage = ongoingOutage;
     }
   }

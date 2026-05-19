@@ -18,7 +18,9 @@
       "Bash(jq:*)",
       "WebFetch(domain:docs.anthropic.com)",
       "Bash(rg:*)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(git rev-parse:*)",
+      "Bash(git remote:*)"
     ]
   },
   "enableAllProjectMcpServers": false

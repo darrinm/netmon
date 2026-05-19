@@ -23,6 +23,7 @@ export interface OutageEvent {
   startTime: Date;
   endTime?: Date;
   duration?: number;
+  lastUpdateTime?: Date;
   type: 'connectivity' | 'partial';
   metrics: {
     packetLoss: number;

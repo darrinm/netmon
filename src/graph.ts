@@ -35,19 +35,20 @@ export class Graph {
       for (let col = 0; col < width; col++) {
         let index: number;
         if (metrics.length <= width) {
-          // If we have fewer points than width, show all points left-aligned
-          index = col < metrics.length ? col : -1;
+          // Right-align: most recent sample lands at the rightmost column ("now")
+          const offset = width - metrics.length;
+          index = col >= offset ? col - offset : -1;
         } else {
           // If we have more points than width, sample evenly but always include recent data
           const startIndex = metrics.length - width;
           index = startIndex + col;
         }
-        
+
         if (index < 0 || index >= metrics.length) {
           line += ' ';
           continue;
         }
-        
+
         const latency = latencies[index];
         
         // Handle outage (0 latency) specially
@@ -119,19 +120,20 @@ export class Graph {
       for (let col = 0; col < width; col++) {
         let index: number;
         if (metrics.length <= width) {
-          // If we have fewer points than width, show all points left-aligned
-          index = col < metrics.length ? col : -1;
+          // Right-align: most recent sample lands at the rightmost column ("now")
+          const offset = width - metrics.length;
+          index = col >= offset ? col - offset : -1;
         } else {
           // If we have more points than width, show the most recent data
           const startIndex = metrics.length - width;
           index = startIndex + col;
         }
-        
+
         if (index < 0 || index >= metrics.length) {
           line += ' ';
           continue;
         }
-        
+
         const packetLoss = packetLosses[index];
         const normalizedLoss = packetLoss / 100;
         const graphRow = height - 1 - Math.round(normalizedLoss * (height - 1));

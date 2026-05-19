@@ -93,7 +93,9 @@ program
       sessionCollections++;
       const outageEvent = outageTracker.processMetric(metric);
       await storage.save(metric);
-      
+
+      const currentOutage = outageTracker.getCurrentOutage();
+
       if (outageEvent) {
         await storage.saveOutage(outageEvent);
 
@@ -102,9 +104,12 @@ program
         } else {
           notifier.outageStarted(outageEvent, config.pingHost);
         }
+      } else if (currentOutage && metric.isOutage) {
+        // Outage is ongoing — persist updated lastUpdateTime so a later restart
+        // can tell how recently we observed activity.
+        await storage.saveOutage(currentOutage);
       }
-      
-      const currentOutage = outageTracker.getCurrentOutage();
+
       const allMetrics = storage.getMetrics();
       const last5min = StatsAnalyzer.getMetricsForPeriod(allMetrics, 0.0833); // 5 min = 0.0833 hours
       const lastHour = StatsAnalyzer.getMetricsForPeriod(allMetrics, 1);

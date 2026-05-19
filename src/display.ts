@@ -67,7 +67,7 @@ export class Display {
     console.log(this.showStatsWithCurrent(metric, stats));
 
     // Graphs if we have enough data and terminal space
-    if (recentMetrics.length > 10 && termHeight > 28) {
+    if (recentMetrics.length >= 2 && termHeight > 28) {
       console.log();
       const graphWidth = Math.min(termWidth - 10, 80);
       
