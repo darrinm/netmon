@@ -1,0 +1,10 @@
+# SPM build artifacts
+.build/
+build/
+
+# Xcode user data (if anyone opens via Xcode)
+*.xcodeproj/xcuserdata/
+*.xcworkspace/xcuserdata/
+
+# Generated iconset (regenerate with scripts/make-icon.swift)
+Netmon/Resources/AppIcon.iconset/

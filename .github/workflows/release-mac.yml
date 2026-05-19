@@ -1,0 +1,74 @@
+name: Release Mac
+
+on:
+  push:
+    tags:
+      - "mac-v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-15
+    defaults:
+      run:
+        working-directory: mac
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode.app
+
+      - name: Import signing certificate
+        env:
+          DEVID_CERT_BASE64: ${{ secrets.DEVID_CERT_BASE64 }}
+          DEVID_CERT_PASSWORD: ${{ secrets.DEVID_CERT_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          echo "$DEVID_CERT_BASE64" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" \
+            -k "$KEYCHAIN_PATH" \
+            -P "$DEVID_CERT_PASSWORD" \
+            -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | xargs)
+
+      - name: Build & sign
+        run: SIGN=developer-id ./build.sh
+
+      - name: Package DMG
+        run: ./scripts/make-dmg.sh
+
+      - name: Store notarytool credentials
+        env:
+          NOTARY_APPLE_ID: ${{ secrets.NOTARY_APPLE_ID }}
+          NOTARY_TEAM_ID: ${{ secrets.NOTARY_TEAM_ID }}
+          NOTARY_PASSWORD: ${{ secrets.NOTARY_PASSWORD }}
+        run: |
+          xcrun notarytool store-credentials NetmonNotary \
+            --apple-id "$NOTARY_APPLE_ID" \
+            --team-id "$NOTARY_TEAM_ID" \
+            --password "$NOTARY_PASSWORD"
+
+      - name: Notarize
+        run: |
+          DMG=$(ls build/Netmon-*.dmg)
+          ./scripts/notarize.sh "$DMG"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Netmon-dmg
+          path: mac/build/Netmon-*.dmg
+
+      - name: GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: mac/build/Netmon-*.dmg
+          generate_release_notes: true
