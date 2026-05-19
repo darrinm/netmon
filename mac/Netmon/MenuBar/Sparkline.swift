@@ -1,43 +1,58 @@
 import SwiftUI
 import Charts
 
-/// Compact Swift Charts sparkline for the menubar popover.
-/// No axes, single accent-tinted line with a soft gradient area fill.
+/// Compact sparkline for the menubar popover. Green line, gradient fill,
+/// translucent red bands over any contiguous run of ≥50%-packet-loss
+/// samples so outages stay visible after recovery.
 struct Sparkline: View {
     let metrics: [NetworkMetric]
-    var tint: Color = .accentColor
+    var windowSeconds: TimeInterval = 5 * 60
 
     var body: some View {
-        Chart(metrics) { metric in
-            LineMark(
-                x: .value("t", metric.timestamp),
-                y: .value("ms", displayValue(metric))
-            )
-            .interpolationMethod(.catmullRom)
-            .foregroundStyle(tint)
-            .lineStyle(StrokeStyle(lineWidth: 1.5))
+        TimelineView(.periodic(from: .now, by: 0.1)) { context in
+            let now = context.date
+            let start = now.addingTimeInterval(-windowSeconds)
 
-            AreaMark(
-                x: .value("t", metric.timestamp),
-                y: .value("ms", displayValue(metric))
-            )
-            .interpolationMethod(.catmullRom)
-            .foregroundStyle(
-                LinearGradient(
-                    colors: [tint.opacity(0.35), tint.opacity(0.02)],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-            )
-        }
-        .chartXAxis(.hidden)
-        .chartYAxis(.hidden)
-        .chartPlotStyle { plot in
-            plot.background(.clear)
+            Chart {
+                ForEach(Array(metrics.outageSpans().enumerated()), id: \.offset) { _, span in
+                    RectangleMark(
+                        xStart: .value("Start", span.start),
+                        xEnd: .value("End", span.end)
+                    )
+                    .foregroundStyle(.red.opacity(0.25))
+                }
+
+                ForEach(metrics) { m in
+                    if m.pingPacketLoss < 100 && m.pingMax > m.pingMin {
+                        AreaMark(
+                            x: .value("t", m.timestamp),
+                            yStart: .value("min", m.pingMin),
+                            yEnd: .value("max", m.pingMax)
+                        )
+                        .foregroundStyle(Color.green.opacity(0.22))
+                        .interpolationMethod(.catmullRom)
+                    }
+                }
+
+                ForEach(metrics) { m in
+                    LineMark(
+                        x: .value("t", m.timestamp),
+                        y: .value("ms", displayValue(m))
+                    )
+                    .interpolationMethod(.catmullRom)
+                    .foregroundStyle(.green)
+                    .lineStyle(StrokeStyle(lineWidth: 1.5))
+                }
+            }
+            .chartXScale(domain: start...now)
+            .chartXAxis(.hidden)
+            .chartYAxis(.hidden)
+            .chartPlotStyle { plot in
+                plot.background(.clear)
+            }
         }
     }
 
-    /// Treat full outages (no reply) as 0 so the line drops cleanly; otherwise show avg ms.
     private func displayValue(_ m: NetworkMetric) -> Double {
         m.pingPacketLoss >= 100 ? 0 : m.pingAvg
     }

@@ -9,6 +9,7 @@ struct MainView: View {
         case now = "Now"
         case history = "History"
         case outages = "Outages"
+        case trends = "Trends"
         case settings = "Settings"
 
         var id: String { rawValue }
@@ -18,6 +19,7 @@ struct MainView: View {
             case .now: return "gauge.with.dots.needle.50percent"
             case .history: return "chart.xyaxis.line"
             case .outages: return "exclamationmark.triangle"
+            case .trends: return "chart.line.uptrend.xyaxis"
             case .settings: return "gearshape"
             }
         }
@@ -35,6 +37,7 @@ struct MainView: View {
             case .now:      NowDetail()
             case .history:  HistoryView()
             case .outages:  OutagesView()
+            case .trends:   TrendsView()
             case .settings: SettingsView(prefs: Preferences.shared)
                                 .onDisappear { Task { await app.applyPreferences() } }
             }
@@ -50,9 +53,9 @@ private struct NowDetail: View {
             Text("Now").font(.largeTitle.bold())
 
             HStack(spacing: 24) {
-                bigStat(title: "Latency", value: latencyText,
+                bigStat(title: "Latency (5m avg)", value: latencyText,
                         secondary: minMaxText, tint: app.health.tint)
-                bigStat(title: "Packet Loss", value: lossText, secondary: nil)
+                bigStat(title: "Packet Loss (5m)", value: lossText, secondary: nil)
                 bigStat(title: "Uptime (5m)", value: uptimeText, secondary: nil)
             }
 
@@ -62,7 +65,7 @@ private struct NowDetail: View {
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, minHeight: 200, alignment: .center)
                 } else {
-                    RecentLatencyChart(metrics: app.recentMetrics, tint: app.health.tint)
+                    RecentLatencyChart(metrics: app.recentMetrics)
                         .frame(height: 200)
                         .padding(.top, 4)
                 }
@@ -101,25 +104,38 @@ private struct NowDetail: View {
         }
     }
 
+    /// Latencies of samples that actually got a reply — averaged over the 5m window.
+    private var validLatencies: [Double] {
+        app.recentMetrics
+            .filter { $0.pingPacketLoss < 100 }
+            .map(\.pingAvg)
+    }
+
     private var latencyText: String {
-        guard let m = app.latestMetric else { return "—" }
-        if m.pingPacketLoss == 100 { return "—" }
-        return String(format: "%.0f ms", m.pingAvg)
+        guard !validLatencies.isEmpty else { return "—" }
+        let avg = validLatencies.reduce(0, +) / Double(validLatencies.count)
+        return String(format: "%.0f ms", avg)
     }
 
     private var minMaxText: String? {
-        guard let m = app.latestMetric, m.pingPacketLoss < 100 else { return nil }
-        return String(format: "min %.0f · max %.0f", m.pingMin, m.pingMax)
+        guard let lo = validLatencies.min(), let hi = validLatencies.max() else { return nil }
+        return String(format: "min %.0f · max %.0f", lo, hi)
     }
 
     private var lossText: String {
-        guard let m = app.latestMetric else { return "—" }
-        return String(format: "%.1f%%", m.pingPacketLoss)
+        guard !app.recentMetrics.isEmpty else { return "—" }
+        let avg = app.recentMetrics
+            .map(\.pingPacketLoss)
+            .reduce(0, +) / Double(app.recentMetrics.count)
+        return String(format: "%.1f%%", avg)
     }
 
+    /// Fraction of recent samples where packet loss stayed below the outage
+    /// threshold (50%). Single-sample blips that didn't open an outage in
+    /// the tracker still count against uptime here.
     private var uptimeText: String {
         guard !app.recentMetrics.isEmpty else { return "—" }
-        let up = app.recentMetrics.filter { !$0.isOutage }.count
+        let up = app.recentMetrics.filter { $0.pingPacketLoss < 50 }.count
         let pct = Double(up) / Double(app.recentMetrics.count) * 100
         return String(format: "%.1f%%", pct)
     }
@@ -127,47 +143,64 @@ private struct NowDetail: View {
 
 private struct RecentLatencyChart: View {
     let metrics: [NetworkMetric]
-    let tint: Color
+    /// Visible window length (anchored to a continuously-advancing "now").
+    var windowSeconds: TimeInterval = 5 * 60
 
     var body: some View {
-        Chart {
-            ForEach(metrics) { m in
-                LineMark(
-                    x: .value("Time", m.timestamp),
-                    y: .value("ms", displayValue(m))
-                )
-                .interpolationMethod(.monotone)
-                .foregroundStyle(tint)
-                .lineStyle(StrokeStyle(lineWidth: 2))
+        // TimelineView ticks 10× per second so the X-axis advances smoothly
+        // instead of jumping when a new sample arrives.
+        TimelineView(.periodic(from: .now, by: 0.1)) { context in
+            let now = context.date
+            let start = now.addingTimeInterval(-windowSeconds)
 
-                AreaMark(
-                    x: .value("Time", m.timestamp),
-                    y: .value("ms", displayValue(m))
-                )
-                .interpolationMethod(.monotone)
-                .foregroundStyle(
-                    LinearGradient(
-                        colors: [tint.opacity(0.35), tint.opacity(0.02)],
-                        startPoint: .top, endPoint: .bottom
+            Chart {
+                ForEach(Array(metrics.outageSpans().enumerated()), id: \.offset) { _, span in
+                    RectangleMark(
+                        xStart: .value("Start", span.start),
+                        xEnd: .value("End", span.end)
                     )
-                )
+                    .foregroundStyle(.red.opacity(0.22))
+                }
+
+                ForEach(metrics) { m in
+                    if m.pingPacketLoss < 100 && m.pingMax > m.pingMin {
+                        AreaMark(
+                            x: .value("Time", m.timestamp),
+                            yStart: .value("min", m.pingMin),
+                            yEnd: .value("max", m.pingMax)
+                        )
+                        .foregroundStyle(Color.green.opacity(0.20))
+                        .interpolationMethod(.monotone)
+                    }
+                }
+
+                ForEach(metrics) { m in
+                    LineMark(
+                        x: .value("Time", m.timestamp),
+                        y: .value("ms", displayValue(m))
+                    )
+                    .interpolationMethod(.monotone)
+                    .foregroundStyle(.green)
+                    .lineStyle(StrokeStyle(lineWidth: 2))
+                }
             }
-        }
-        .chartYAxis {
-            AxisMarks(position: .leading) { value in
-                AxisGridLine().foregroundStyle(.quaternary)
-                AxisValueLabel {
-                    if let v = value.as(Double.self) {
-                        Text("\(Int(v)) ms").font(.caption).foregroundStyle(.secondary)
+            .chartXScale(domain: start...now)
+            .chartYAxis {
+                AxisMarks(position: .leading) { value in
+                    AxisGridLine().foregroundStyle(.quaternary)
+                    AxisValueLabel {
+                        if let v = value.as(Double.self) {
+                            Text("\(Int(v)) ms").font(.caption).foregroundStyle(.secondary)
+                        }
                     }
                 }
             }
-        }
-        .chartXAxis {
-            AxisMarks(values: .automatic(desiredCount: 5)) { _ in
-                AxisGridLine().foregroundStyle(.quaternary.opacity(0.4))
-                AxisValueLabel(format: .dateTime.hour().minute())
-                    .foregroundStyle(.secondary)
+            .chartXAxis {
+                AxisMarks(values: .automatic(desiredCount: 5)) { _ in
+                    AxisGridLine().foregroundStyle(.quaternary.opacity(0.4))
+                    AxisValueLabel(format: .dateTime.hour().minute())
+                        .foregroundStyle(.secondary)
+                }
             }
         }
     }

@@ -3,6 +3,7 @@ import SwiftUI
 @main
 struct NetmonApp: App {
     @State private var app: AppModel
+    @Environment(\.openWindow) private var openWindow
 
     init() {
         let model = AppModel()
@@ -16,7 +17,11 @@ struct NetmonApp: App {
                 .environment(app)
                 .frame(width: 300)
         } label: {
+            // The label is always rendered (the status item is always present),
+            // so it's a reliable place to listen for "open main window" signals
+            // posted from the notification delegate.
             MenuBarLabel(health: app.health, latency: app.latestMetric?.pingAvg)
+                .modifier(OpenMainWindowOnNotification())
         }
         .menuBarExtraStyle(.window)
 
@@ -26,6 +31,17 @@ struct NetmonApp: App {
                 .frame(minWidth: 720, minHeight: 480)
         }
         .windowResizability(.contentMinSize)
+    }
+}
+
+private struct OpenMainWindowOnNotification: ViewModifier {
+    @Environment(\.openWindow) private var openWindow
+
+    func body(content: Content) -> some View {
+        content.onReceive(NotificationCenter.default.publisher(for: .netmonOpenMainWindow)) { _ in
+            openWindow(id: "main")
+            NSApp.activate(ignoringOtherApps: true)
+        }
     }
 }
 

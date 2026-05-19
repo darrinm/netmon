@@ -40,13 +40,13 @@ final class Preferences {
 
     private init() {
         defaults.register(defaults: [
-            Key.pingHost: "8.8.8.8",
+            Key.pingHost: "1.1.1.1",
             Key.dnsHost: "google.com",
             Key.intervalSeconds: 30,
             Key.notificationsEnabled: true,
             Key.launchAtLogin: false,
         ])
-        pingHost = defaults.string(forKey: Key.pingHost) ?? "8.8.8.8"
+        pingHost = defaults.string(forKey: Key.pingHost) ?? "1.1.1.1"
         dnsHost = defaults.string(forKey: Key.dnsHost) ?? "google.com"
         intervalSeconds = defaults.integer(forKey: Key.intervalSeconds)
         notificationsEnabled = defaults.bool(forKey: Key.notificationsEnabled)

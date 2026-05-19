@@ -15,6 +15,47 @@ struct NetworkMetric: Codable, Hashable, Identifiable, Sendable {
     var id: Date { timestamp }
 }
 
+extension Array where Element == NetworkMetric {
+    /// Contiguous runs of samples whose packet loss meets the outage threshold.
+    /// Only runs of `minSamples` or more bad samples count — single-sample
+    /// blips show up in the distribution band, not as a red outage rectangle.
+    /// Each span's end is the next non-outage sample's timestamp (or, for an
+    /// ongoing run, the last outage sample's timestamp plus `minOpenWidth`).
+    func outageSpans(
+        threshold: Double = 50,
+        minSamples: Int = 2,
+        minOpenWidth: TimeInterval = 1
+    ) -> [(start: Date, end: Date)] {
+        var spans: [(start: Date, end: Date)] = []
+        var runStart: Date?
+        var runCount: Int = 0
+        var lastBad: Date?
+
+        for m in self {
+            if m.pingPacketLoss >= threshold {
+                if runStart == nil { runStart = m.timestamp }
+                runCount += 1
+                lastBad = m.timestamp
+            } else if let start = runStart {
+                if runCount >= minSamples, let last = lastBad {
+                    // Close the band at this good sample so it's at least one
+                    // sampling interval wide.
+                    spans.append((start, m.timestamp))
+                    _ = last
+                }
+                runStart = nil
+                runCount = 0
+                lastBad = nil
+            }
+        }
+        if let start = runStart, let last = lastBad, runCount >= minSamples {
+            let end = Swift.max(last, start.addingTimeInterval(minOpenWidth))
+            spans.append((start, end))
+        }
+        return spans
+    }
+}
+
 extension NetworkMetric: FetchableRecord, PersistableRecord {
     static let databaseTableName = "metrics"
 

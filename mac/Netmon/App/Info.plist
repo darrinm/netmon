@@ -26,6 +26,8 @@
 	<true/>
 	<key>NSHumanReadableCopyright</key>
 	<string>Copyright © 2026 Darrin Massena. All rights reserved.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Netmon uses your Wi-Fi network's name (SSID) and signal strength to attach context to outage post-mortems. Granting location lets reports say "this happened on AT&amp;T-2.4G with -68 dBm signal" instead of "Wi-Fi info unavailable".</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 </dict>

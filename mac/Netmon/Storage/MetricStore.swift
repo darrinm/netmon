@@ -54,6 +54,12 @@ actor MetricStore {
             }
             try db.create(index: "outages_start_time", on: "outages", columns: ["start_time"])
         }
+        m.registerMigration("v2_post_mortems") { db in
+            try db.create(table: "outage_post_mortems") { t in
+                t.column("outage_id", .text).primaryKey()
+                t.column("json", .text).notNull()
+            }
+        }
         return m
     }
 
@@ -101,4 +107,45 @@ actor MetricStore {
             try NetworkMetric.order(NetworkMetric.Columns.timestamp).fetchAll(db)
         }
     }
+
+    // MARK: - Outage post-mortems
+
+    func savePostMortem(_ pm: OutagePostMortem, for outageID: String) async throws {
+        let json = try JSONEncoder.iso8601.encode(pm)
+        let jsonString = String(data: json, encoding: .utf8) ?? "{}"
+        try await dbPool.write { db in
+            try db.execute(sql: """
+                INSERT INTO outage_post_mortems (outage_id, json) VALUES (?, ?)
+                ON CONFLICT(outage_id) DO UPDATE SET json = excluded.json
+            """, arguments: [outageID, jsonString])
+        }
+    }
+
+    func loadPostMortem(for outageID: String) async throws -> OutagePostMortem? {
+        try await dbPool.read { db in
+            guard let json = try String.fetchOne(
+                db,
+                sql: "SELECT json FROM outage_post_mortems WHERE outage_id = ?",
+                arguments: [outageID]
+            ) else { return nil }
+            guard let data = json.data(using: .utf8) else { return nil }
+            return try? JSONDecoder.iso8601.decode(OutagePostMortem.self, from: data)
+        }
+    }
+}
+
+private extension JSONEncoder {
+    static let iso8601: JSONEncoder = {
+        let e = JSONEncoder()
+        e.dateEncodingStrategy = .iso8601
+        return e
+    }()
+}
+
+private extension JSONDecoder {
+    static let iso8601: JSONDecoder = {
+        let d = JSONDecoder()
+        d.dateDecodingStrategy = .iso8601
+        return d
+    }()
 }

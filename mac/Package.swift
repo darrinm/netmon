@@ -23,6 +23,8 @@ let package = Package(
                 .linkedFramework("SwiftUI"),
                 .linkedFramework("UserNotifications"),
                 .linkedFramework("Network"),
+                .linkedFramework("CoreWLAN"),
+                .linkedFramework("CoreLocation"),
             ]
         ),
     ]

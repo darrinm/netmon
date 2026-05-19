@@ -8,15 +8,15 @@ struct OutagesView: View {
     var body: some View {
         HSplitView {
             list
-                .frame(minWidth: 280, idealWidth: 320)
+                .frame(minWidth: 240, idealWidth: 300, maxWidth: 380)
 
             if let event = selectedOutage {
                 OutageDetail(outage: event)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .frame(minWidth: 380, maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 Text("Select an outage to see details.")
                     .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .frame(minWidth: 380, maxWidth: .infinity, maxHeight: .infinity)
             }
         }
         .task { await load() }
@@ -91,6 +91,9 @@ private struct OutageRow: View {
 
 private struct OutageDetail: View {
     let outage: OutageEvent
+    @Environment(AppModel.self) private var app
+    @State private var postMortem: OutagePostMortem?
+    @State private var loadingPostMortem = true
 
     var body: some View {
         ScrollView {
@@ -106,35 +109,177 @@ private struct OutageDetail: View {
                             .background(.red.opacity(0.15), in: Capsule())
                             .foregroundStyle(.red)
                     }
+                    Button {
+                        copyAsMarkdown()
+                    } label: {
+                        Label("Copy", systemImage: "doc.on.clipboard")
+                    }
+                    .help("Copy outage report as Markdown")
                 }
 
                 GroupBox {
-                    VStack(alignment: .leading, spacing: 8) {
-                        kv("Started", outage.startTime.formatted(date: .long, time: .standard))
+                    VStack(alignment: .leading, spacing: 10) {
+                        row("Started", outage.startTime.formatted(date: .abbreviated, time: .standard))
                         if let endTime = outage.endTime {
-                            kv("Ended", endTime.formatted(date: .long, time: .standard))
+                            row("Ended", endTime.formatted(date: .abbreviated, time: .standard))
                         }
-                        kv("Duration", durationText)
+                        row("Duration", durationText)
                         if let updated = outage.lastUpdateTime {
-                            kv("Last activity", updated.formatted(date: .abbreviated, time: .standard))
+                            row("Last activity", updated.formatted(date: .abbreviated, time: .standard))
                         }
-                        kv("Packet loss at start", String(format: "%.1f%%", outage.startPacketLoss))
-                        kv("DNS at start", outage.startDNSFailure ? "Failure" : "OK")
-                        kv("Outage id", outage.id)
-                            .textSelection(.enabled)
+                        row("Packet loss at start", String(format: "%.1f%%", outage.startPacketLoss))
+                        row("DNS at start", outage.startDNSFailure ? "Failure" : "OK")
+                        row("Outage id", outage.id, selectable: true)
                     }
+                    .padding(12)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
+
+                postMortemSection
             }
             .padding(24)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .task(id: outage.id) {
+            loadingPostMortem = true
+            postMortem = await app.fetchPostMortem(for: outage.id)
+            loadingPostMortem = false
         }
     }
 
-    private func kv(_ key: String, _ value: String) -> some View {
-        HStack(alignment: .firstTextBaseline) {
-            Text(key).foregroundStyle(.secondary).frame(width: 160, alignment: .leading)
-            Text(value).monospacedDigit()
-            Spacer()
+    @ViewBuilder
+    private var postMortemSection: some View {
+        if let pm = postMortem {
+            if let eth = pm.ethernet {
+                GroupBox(label: Text(ethernetSectionTitle(eth)).font(.headline)) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        row("Interface", eth.interface)
+                        if let port = eth.hardwarePort { row("Hardware port", port) }
+                        row("Link", eth.linkActive ? "Active" : "Down")
+                        if let media = eth.media { row("Media", media) }
+                        if let mac = eth.macAddress { row("MAC", mac, selectable: true) }
+                        if let ip = eth.ipAddress { row("IP", ip, selectable: true) }
+                        if let mtu = eth.mtu { row("MTU", "\(mtu)") }
+                    }
+                    .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            } else if let wifi = pm.wifi {
+                GroupBox(label: Text("Wi-Fi at the moment of failure").font(.headline)) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        row("Interface", wifi.interface)
+                        row("Network", wifi.ssid ?? "unknown (grant Location in Settings)")
+                        row("BSSID", wifi.bssid ?? "unknown")
+                        row("Signal", "\(wifi.rssiDBm) dBm")
+                        row("Noise", "\(wifi.noiseDBm) dBm")
+                        if let ch = wifi.channel { row("Channel", "\(ch)") }
+                        if wifi.transmitRateMbps > 0 {
+                            row("TX rate", String(format: "%.0f Mbps", wifi.transmitRateMbps))
+                        }
+                    }
+                    .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+
+            if let gw = pm.gatewayIP {
+                GroupBox(label: Text("Routing").font(.headline)) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        row("Default gateway", gw, selectable: true)
+                    }
+                    .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+
+            if let hops = pm.traceroute, !hops.isEmpty {
+                GroupBox(label: Text("Traceroute").font(.headline)) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        ForEach(hops) { hop in
+                            HStack {
+                                Text("\(hop.index)")
+                                    .monospacedDigit()
+                                    .foregroundStyle(.secondary)
+                                    .frame(width: 24, alignment: .trailing)
+                                Text(hop.ip ?? "*")
+                                    .monospaced()
+                                    .frame(width: 140, alignment: .leading)
+                                if let rtt = hop.rttMs {
+                                    Text(String(format: "%.1f ms", rtt))
+                                        .monospacedDigit()
+                                        .foregroundStyle(.secondary)
+                                } else {
+                                    Text("timeout")
+                                        .foregroundStyle(.red)
+                                }
+                                Spacer()
+                            }
+                            .font(.callout)
+                        }
+                    }
+                    .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+
+            if !pm.recentSystemEvents.isEmpty {
+                GroupBox(label: Text("Nearby system events").font(.headline)) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        ForEach(pm.recentSystemEvents) { ev in
+                            HStack {
+                                Image(systemName: ev.kind.systemImage)
+                                    .foregroundStyle(ev.kind.tint)
+                                    .frame(width: 18)
+                                Text(ev.kind.label)
+                                    .frame(width: 200, alignment: .leading)
+                                Text(ev.timestamp.formatted(date: .omitted, time: .standard))
+                                    .foregroundStyle(.secondary)
+                                Spacer()
+                            }
+                            .font(.callout)
+                        }
+                    }
+                    .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+        } else if loadingPostMortem {
+            Text("Capturing post-mortem…")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        } else {
+            Text("No post-mortem available — only outages that occurred while Netmon was running get a snapshot.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func copyAsMarkdown() {
+        let md = MarkdownReport.render(outage: outage, postMortem: postMortem)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(md, forType: .string)
+    }
+
+    private func ethernetSectionTitle(_ eth: EthernetSnapshot) -> String {
+        if let port = eth.hardwarePort { return "\(port) at the moment of failure" }
+        return "Ethernet at the moment of failure"
+    }
+
+    @ViewBuilder
+    private func row(_ key: String, _ value: String, selectable: Bool = false) -> some View {
+        LabeledContent {
+            if selectable {
+                Text(value)
+                    .monospacedDigit()
+                    .multilineTextAlignment(.trailing)
+                    .textSelection(.enabled)
+            } else {
+                Text(value)
+                    .monospacedDigit()
+                    .multilineTextAlignment(.trailing)
+            }
+        } label: {
+            Text(key).foregroundStyle(.secondary)
         }
     }
 

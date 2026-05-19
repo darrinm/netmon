@@ -2,6 +2,10 @@ import Foundation
 import UserNotifications
 import AppKit
 
+extension Notification.Name {
+    static let netmonOpenMainWindow = Notification.Name("NetmonOpenMainWindow")
+}
+
 /// Posts native Notification Center alerts when outages start or end.
 @MainActor
 final class NotificationCoord: NSObject, UNUserNotificationCenterDelegate {
@@ -75,6 +79,7 @@ final class NotificationCoord: NSObject, UNUserNotificationCenterDelegate {
     ) {
         Task { @MainActor in
             NSApp.activate(ignoringOtherApps: true)
+            NotificationCenter.default.post(name: .netmonOpenMainWindow, object: nil)
         }
         completionHandler()
     }

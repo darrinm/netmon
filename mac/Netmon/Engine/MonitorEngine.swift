@@ -6,9 +6,17 @@ import Darwin
 /// ICMP implementation lives in the Phase 5 roadmap.
 actor MonitorEngine {
     struct Config: Sendable {
-        var pingHost: String = "8.8.8.8"
+        // Cloudflare's resolver is far more permissive about ICMP than 8.8.8.8,
+        // which Google rate-limits. See research: pinging 8.8.8.8 will report
+        // "dropped packets" even when the network is fine because Google
+        // chooses not to reply to every echo request.
+        var pingHost: String = "1.1.1.1"
         var dnsHost: String = "google.com"
+        // Always send multiple probes per sample so a single dropped echo
+        // doesn't read as 100% loss for the tick. macOS ping allows non-root
+        // -i down to ~0.2s, giving us 3 pings in ~0.4s wall time.
         var pingCount: Int = 3
+        var pingInterval: Double = 0.2
         var pingDeadline: Int = 5    // total deadline seconds for the ping run
         var interval: Duration = .seconds(30)
         /// SOCK_DGRAM ICMP via `NativePing` is experimental on macOS; off by default.
@@ -82,18 +90,13 @@ actor MonitorEngine {
 
     private func measurePing() async -> PingResult {
         let host = config.pingHost
-        // Scale the ping cycle to the sampling interval so we always finish
-        // inside one tick. At 1–2s intervals we send a single ping; at 5s+
-        // we send the configured pingCount.
+        // Always send `pingCount` probes per sample (default 3) regardless of
+        // interval. Single-ping samples are too noisy to distinguish a real
+        // outage from a deprioritized ICMP echo — see Smokeping/PingPlotter
+        // research notes.
         let intervalSec = max(1, Int(config.interval.components.seconds))
-        let count: Int
-        if intervalSec <= 2 {
-            count = 1
-        } else if intervalSec <= 4 {
-            count = min(config.pingCount, 2)
-        } else {
-            count = config.pingCount
-        }
+        let count = config.pingCount
+        let perPingInterval = config.pingInterval
         let deadline = max(1, min(config.pingDeadline, intervalSec - 1))
         let useNative = config.useNativeICMP
         return await Task.detached { () -> PingResult in
@@ -106,16 +109,21 @@ actor MonitorEngine {
                     )
                 }
             }
-            return Self.shellPing(host: host, count: count, deadline: deadline)
+            return Self.shellPing(host: host, count: count, deadline: deadline, perPingInterval: perPingInterval)
         }.value
     }
 
-    /// Last-resort shell-out fallback. Same parser as the original
-    /// implementation; only used if NativePing returns 100% loss.
-    private static func shellPing(host: String, count: Int, deadline: Int) -> PingResult {
+    /// Primary ping implementation: shells out to /sbin/ping with a sub-second
+    /// inter-packet interval so we can fit multiple probes inside a 1s tick.
+    private static func shellPing(host: String, count: Int, deadline: Int, perPingInterval: Double) -> PingResult {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/sbin/ping")
-        process.arguments = ["-c", "\(count)", "-t", "\(deadline)", host]
+        process.arguments = [
+            "-c", "\(count)",
+            "-i", String(format: "%.2f", perPingInterval),
+            "-t", "\(deadline)",
+            host,
+        ]
         let pipe = Pipe()
         process.standardOutput = pipe
         process.standardError = pipe
@@ -170,22 +178,10 @@ actor MonitorEngine {
 
     private func measureDNS() async -> DNSResult {
         await Task.detached { [host = config.dnsHost] in
-            let start = Date()
-            var hints = addrinfo(
-                ai_flags: 0,
-                ai_family: AF_UNSPEC,
-                ai_socktype: SOCK_STREAM,
-                ai_protocol: 0,
-                ai_addrlen: 0,
-                ai_canonname: nil,
-                ai_addr: nil,
-                ai_next: nil
-            )
-            var info: UnsafeMutablePointer<addrinfo>?
-            let status = getaddrinfo(host, nil, &hints, &info)
-            let elapsedMs = Date().timeIntervalSince(start) * 1000
-            if info != nil { freeaddrinfo(info) }
-            return DNSResult(responseTime: elapsedMs, success: status == 0)
+            // Issue a fresh DNS A-record query directly to 1.1.1.1:53 via UDP
+            // so we measure real wire round-trip, not a cached getaddrinfo.
+            let r = DirectDNS.query(name: host, server: "1.1.1.1", timeout: 2)
+            return DNSResult(responseTime: r.responseTime, success: r.success)
         }.value
     }
 }

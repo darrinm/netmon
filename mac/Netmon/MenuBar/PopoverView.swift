@@ -15,21 +15,29 @@ struct PopoverView: View {
             }
             .font(.system(.body, design: .rounded))
 
-            // Sparkline
-            ZStack {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(.quaternary.opacity(0.4))
-                if app.recentMetrics.count >= 2 {
-                    Sparkline(metrics: app.recentMetrics, tint: app.health.tint)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 4)
-                } else {
-                    Text("Collecting samples…")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+            // Sparkline — click to open the main window.
+            Button {
+                openWindow(id: "main")
+                NSApp.activate(ignoringOtherApps: true)
+            } label: {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(.quaternary.opacity(0.4))
+                    if app.recentMetrics.count >= 2 {
+                        Sparkline(metrics: app.recentMetrics)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 4)
+                    } else {
+                        Text("Collecting samples…")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
+                .frame(height: 60)
+                .contentShape(Rectangle())
             }
-            .frame(height: 60)
+            .buttonStyle(.plain)
+            .help("Open Netmon")
 
             Divider()
 
@@ -38,7 +46,7 @@ struct PopoverView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Spacer()
-                Text("30s interval · \(app.sessionSamples) samples")
+                Text("\(Preferences.shared.intervalSeconds)s interval · \(app.sessionSamples) samples")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

@@ -48,6 +48,9 @@ final class AppModel {
 
             // Request notification permission once.
             await NotificationCoord.shared.requestAuthorization()
+
+            // Prime SystemEventLog (subscribes to sleep/wake/path changes).
+            _ = SystemEventLog.shared
         } catch {
             startupError = "Failed to start: \(error.localizedDescription)"
         }
@@ -88,6 +91,15 @@ final class AppModel {
         return (try? await store.loadOutages()) ?? []
     }
 
+    func fetchPostMortem(for outageID: String) async -> OutagePostMortem? {
+        guard let store else { return nil }
+        return try? await store.loadPostMortem(for: outageID)
+    }
+
+    fileprivate func savePostMortem(_ pm: OutagePostMortem, for outageID: String) async {
+        try? await store?.savePostMortem(pm, for: outageID)
+    }
+
     private func handle(_ metric: NetworkMetric) async {
         let result = tracker.processMetric(metric)
 
@@ -100,6 +112,16 @@ final class AppModel {
             try? await store?.upsertOutage(event)
             if event.endTime == nil {
                 NotificationCoord.shared.outageStarted(event)
+                // Fire-and-forget post-mortem capture. Traceroute is slow
+                // (10-20s) so we don't await — the report lands in storage
+                // when ready and the UI picks it up on next refresh.
+                let target = Preferences.shared.pingHost
+                Task.detached { [weak self] in
+                    let pm = await PostMortemCollector.collect(
+                        for: event.startTime, target: target
+                    )
+                    await self?.savePostMortem(pm, for: event.id)
+                }
             } else {
                 NotificationCoord.shared.outageEnded(event)
             }
