@@ -8,13 +8,6 @@ struct PopoverView: View {
         VStack(alignment: .leading, spacing: 12) {
             header
 
-            VStack(alignment: .leading, spacing: 6) {
-                statRow(label: "Latency", value: latencyText)
-                statRow(label: "Loss",    value: lossText)
-                statRow(label: "Uptime",  value: uptimeText)
-            }
-            .font(.system(.body, design: .rounded))
-
             // Sparkline — click to open the main window.
             Button {
                 openWindow(id: "main")
@@ -38,6 +31,13 @@ struct PopoverView: View {
             }
             .buttonStyle(.plain)
             .help("Open Netmon")
+
+            VStack(alignment: .leading, spacing: 6) {
+                statRow(label: "Latency", value: latencyText)
+                statRow(label: "Loss",    value: lossText)
+                statRow(label: "Uptime",  value: uptimeText)
+            }
+            .font(.system(.body, design: .rounded))
 
             Divider()
 

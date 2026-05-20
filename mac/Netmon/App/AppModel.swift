@@ -123,11 +123,14 @@ final class AppModel {
             try? await store?.upsertOutage(event)
             if event.endTime == nil {
                 NotificationCoord.shared.outageStarted(event)
-                // Fire-and-forget post-mortem capture. Traceroute is slow
-                // (10-20s) so we don't await — the report lands in storage
-                // when ready and the UI picks it up on next refresh.
+                // Fire-and-forget post-mortem capture. Wait first: these
+                // outages are only a few seconds long, and capturing *during*
+                // one gets nothing — `route`/`traceroute` fail with no
+                // default route and the link_on event isn't logged yet.
+                // The delay lets the link recover so the snapshot is real.
                 let target = Preferences.shared.pingHost
                 Task.detached { [weak self] in
+                    try? await Task.sleep(for: .seconds(15))
                     let pm = await PostMortemCollector.collect(
                         for: event.startTime, target: target
                     )
