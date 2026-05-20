@@ -39,7 +39,7 @@ final class NotificationCoord: NSObject, UNUserNotificationCenterDelegate {
 
     func outageEnded(_ outage: OutageEvent) {
         guard Preferences.shared.notificationsEnabled else { return }
-        let duration = outage.durationMs.map(formatDuration(ms:)) ?? "unknown duration"
+        let duration = outage.durationMs.map { ($0 / 1000).humanDuration } ?? "an unknown duration"
         post(
             id: "end-\(outage.id)",
             title: "Network recovered",
@@ -61,13 +61,6 @@ final class NotificationCoord: NSObject, UNUserNotificationCenterDelegate {
         let loss = String(format: "%.0f%%", outage.startPacketLoss)
         let dns = outage.startDNSFailure ? " · DNS failing" : ""
         return "Can't reach \(host) · \(loss) packet loss\(dns)"
-    }
-
-    private func formatDuration(ms: Double) -> String {
-        let s = ms / 1000
-        if s < 60 { return String(format: "%.0fs", s) }
-        if s < 3600 { return String(format: "%dm %ds", Int(s/60), Int(s.truncatingRemainder(dividingBy: 60))) }
-        return String(format: "%.1fh", s/3600)
     }
 
     // MARK: - Notification action: clicking opens Netmon.

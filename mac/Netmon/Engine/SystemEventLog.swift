@@ -53,9 +53,16 @@ final class SystemEventLog {
         monitor.pathUpdateHandler = { [weak self] path in
             let isSatisfied = path.status == .satisfied
             Task { @MainActor in
-                self?.record(isSatisfied ? .networkPathSatisfied : .networkPathUnsatisfied)
+                // Only record genuine transitions — macOS fires path
+                // updates often even when satisfied-status is unchanged,
+                // which would otherwise flush the buffer with duplicates.
+                guard let self, self.lastPathSatisfied != isSatisfied else { return }
+                self.lastPathSatisfied = isSatisfied
+                self.record(isSatisfied ? .networkPathSatisfied : .networkPathUnsatisfied)
             }
         }
         monitor.start(queue: .global(qos: .utility))
     }
+
+    private var lastPathSatisfied: Bool?
 }

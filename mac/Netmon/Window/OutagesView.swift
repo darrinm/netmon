@@ -20,7 +20,9 @@ struct OutagesView: View {
             }
         }
         .task { await load() }
-        .onChange(of: app.sessionSamples) { _, _ in
+        // Outages change only when one starts or ends — refresh on that,
+        // not on every sample tick.
+        .onChange(of: app.currentOutage) { _, _ in
             Task { await load() }
         }
     }
@@ -80,13 +82,7 @@ private struct OutageRow: View {
         .padding(.vertical, 4)
     }
 
-    private var durationText: String {
-        let ms = outage.durationMs ?? (outage.endTime ?? Date()).timeIntervalSince(outage.startTime) * 1000
-        let s = ms / 1000
-        if s < 60 { return String(format: "%.0fs", s) }
-        if s < 3600 { return String(format: "%.0fm %.0fs", floor(s/60), s.truncatingRemainder(dividingBy: 60)) }
-        return String(format: "%.1fh", s/3600)
-    }
+    private var durationText: String { outage.effectiveDuration.humanDuration }
 }
 
 private struct OutageDetail: View {
@@ -94,6 +90,7 @@ private struct OutageDetail: View {
     @Environment(AppModel.self) private var app
     @State private var postMortem: OutagePostMortem?
     @State private var loadingPostMortem = true
+    @State private var scope: OutageScope = .unknown
 
     var body: some View {
         ScrollView {
@@ -135,6 +132,8 @@ private struct OutageDetail: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
 
+                scopeBanner
+
                 postMortemSection
             }
             .padding(24)
@@ -143,7 +142,30 @@ private struct OutageDetail: View {
         .task(id: outage.id) {
             loadingPostMortem = true
             postMortem = await app.fetchPostMortem(for: outage.id)
+            let around = await app.metricsAround(outage.startTime, windowSeconds: 30)
+            scope = OutageScope.classify(around)
             loadingPostMortem = false
+        }
+    }
+
+    @ViewBuilder
+    private var scopeBanner: some View {
+        if scope != .unknown {
+            HStack(spacing: 10) {
+                Image(systemName: scope.systemImage)
+                    .font(.title2)
+                    .foregroundStyle(scope.tint)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(scope.label).font(.headline)
+                    Text(scope.detail)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer()
+            }
+            .padding(12)
+            .background(scope.tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
         }
     }
 
@@ -151,7 +173,7 @@ private struct OutageDetail: View {
     private var postMortemSection: some View {
         if let pm = postMortem {
             if let eth = pm.ethernet {
-                GroupBox(label: Text(ethernetSectionTitle(eth)).font(.headline)) {
+                GroupBox(label: Text("\(eth.displayName) at the moment of failure").font(.headline)) {
                     VStack(alignment: .leading, spacing: 10) {
                         row("Interface", eth.interface)
                         if let port = eth.hardwarePort { row("Hardware port", port) }
@@ -176,6 +198,39 @@ private struct OutageDetail: View {
                         if wifi.transmitRateMbps > 0 {
                             row("TX rate", String(format: "%.0f Mbps", wifi.transmitRateMbps))
                         }
+                    }
+                    .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+
+            if let links = pm.linkDownIntervals, !links.isEmpty {
+                GroupBox(label: Text("Ethernet link events").font(.headline)) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        ForEach(links) { iv in
+                            HStack {
+                                Image(systemName: "cable.connector")
+                                    .foregroundStyle(.red)
+                                    .frame(width: 18)
+                                Text(iv.interface)
+                                    .monospaced()
+                                    .frame(width: 60, alignment: .leading)
+                                Text("link down")
+                                    .foregroundStyle(.secondary)
+                                if let ms = iv.durationMs {
+                                    Text(String(format: "%.2f s", ms / 1000))
+                                        .monospacedDigit()
+                                        .bold()
+                                }
+                                Spacer()
+                                Text(iv.start.formatted(date: .omitted, time: .standard))
+                                    .foregroundStyle(.secondary)
+                            }
+                            .font(.callout)
+                        }
+                        Text("Captured live from the kernel log — a real physical link drop, not a measurement artifact.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
                     .padding(12)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -260,10 +315,6 @@ private struct OutageDetail: View {
         NSPasteboard.general.setString(md, forType: .string)
     }
 
-    private func ethernetSectionTitle(_ eth: EthernetSnapshot) -> String {
-        if let port = eth.hardwarePort { return "\(port) at the moment of failure" }
-        return "Ethernet at the moment of failure"
-    }
 
     @ViewBuilder
     private func row(_ key: String, _ value: String, selectable: Bool = false) -> some View {
@@ -283,18 +334,60 @@ private struct OutageDetail: View {
         }
     }
 
-    private var durationText: String {
-        if let ms = outage.durationMs {
-            return format(ms: ms)
-        }
-        let ms = (outage.endTime ?? Date()).timeIntervalSince(outage.startTime) * 1000
-        return format(ms: ms)
+    private var durationText: String { outage.effectiveDuration.humanDuration }
+}
+
+/// Whether an outage was local (Mac↔router link) or upstream (past the
+/// router), inferred by comparing internet-target loss against the
+/// concurrent gateway ping during the outage window.
+enum OutageScope: Equatable {
+    case local
+    case upstream
+    case unknown
+
+    /// Internet loss is high. If the gateway was also unreachable → local;
+    /// if the gateway stayed reachable → upstream. No gateway data → unknown.
+    static func classify(_ metrics: [NetworkMetric]) -> OutageScope {
+        let outageSamples = metrics.filter { $0.pingPacketLoss >= NetworkThresholds.outagePacketLoss }
+        guard !outageSamples.isEmpty else { return .unknown }
+        let gwLosses = outageSamples.compactMap { $0.gatewayPacketLoss }
+        guard !gwLosses.isEmpty else { return .unknown }
+        let avgGatewayLoss = gwLosses.reduce(0, +) / Double(gwLosses.count)
+        return avgGatewayLoss >= NetworkThresholds.outagePacketLoss ? .local : .upstream
     }
 
-    private func format(ms: Double) -> String {
-        let s = ms / 1000
-        if s < 60 { return String(format: "%.1fs", s) }
-        if s < 3600 { return String(format: "%dm %ds", Int(s/60), Int(s.truncatingRemainder(dividingBy: 60))) }
-        return String(format: "%.2fh", s/3600)
+    var label: String {
+        switch self {
+        case .local:    return "Local — Mac ↔ router link"
+        case .upstream: return "Upstream — past the router"
+        case .unknown:  return ""
+        }
+    }
+
+    var detail: String {
+        switch self {
+        case .local:
+            return "The gateway was unreachable too, so the drop is between this Mac and the router — link, cable, switch, or NIC."
+        case .upstream:
+            return "The gateway stayed reachable while the internet target did not — the drop is past the router (ISP or beyond)."
+        case .unknown:
+            return ""
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .local:    return "cable.connector"
+        case .upstream: return "globe.americas"
+        case .unknown:  return "questionmark.circle"
+        }
+    }
+
+    var tint: Color {
+        switch self {
+        case .local:    return .orange
+        case .upstream: return .blue
+        case .unknown:  return .secondary
+        }
     }
 }

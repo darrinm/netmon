@@ -57,6 +57,8 @@ private struct NowDetail: View {
                         secondary: minMaxText, tint: app.health.tint)
                 bigStat(title: "Packet Loss (5m)", value: lossText, secondary: nil)
                 bigStat(title: "Uptime (5m)", value: uptimeText, secondary: nil)
+                bigStat(title: "Gateway loss (5m)", value: gatewayLossText,
+                        secondary: gatewayLatencyText)
             }
 
             GroupBox("Last 5 Minutes") {
@@ -135,9 +137,27 @@ private struct NowDetail: View {
     /// the tracker still count against uptime here.
     private var uptimeText: String {
         guard !app.recentMetrics.isEmpty else { return "—" }
-        let up = app.recentMetrics.filter { $0.pingPacketLoss < 50 }.count
+        let up = app.recentMetrics.filter { $0.pingPacketLoss < NetworkThresholds.outagePacketLoss }.count
         let pct = Double(up) / Double(app.recentMetrics.count) * 100
         return String(format: "%.1f%%", pct)
+    }
+
+    /// 5-minute mean packet loss to the LAN gateway. If this stays near 0
+    /// while "Packet Loss" rises, the trouble is upstream of the router;
+    /// if both rise together, it's the local Mac↔router link.
+    private var gatewayLossText: String {
+        let losses = app.recentMetrics.compactMap { $0.gatewayPacketLoss }
+        guard !losses.isEmpty else { return "—" }
+        return String(format: "%.1f%%", losses.reduce(0, +) / Double(losses.count))
+    }
+
+    private var gatewayLatencyText: String? {
+        let lats = app.recentMetrics.compactMap { m -> Double? in
+            guard let avg = m.gatewayPingAvg, (m.gatewayPacketLoss ?? 100) < 100 else { return nil }
+            return avg
+        }
+        guard !lats.isEmpty else { return nil }
+        return String(format: "%.1f ms avg", lats.reduce(0, +) / Double(lats.count))
     }
 }
 
@@ -147,14 +167,17 @@ private struct RecentLatencyChart: View {
     var windowSeconds: TimeInterval = 5 * 60
 
     var body: some View {
+        // Spans depend only on `metrics` — compute once per data change,
+        // not on every 0.1s TimelineView tick.
+        let spans = metrics.outageSpans()
         // TimelineView ticks 10× per second so the X-axis advances smoothly
         // instead of jumping when a new sample arrives.
-        TimelineView(.periodic(from: .now, by: 0.1)) { context in
+        return TimelineView(.periodic(from: .now, by: 0.1)) { context in
             let now = context.date
             let start = now.addingTimeInterval(-windowSeconds)
 
             Chart {
-                ForEach(Array(metrics.outageSpans().enumerated()), id: \.offset) { _, span in
+                ForEach(Array(spans.enumerated()), id: \.offset) { _, span in
                     RectangleMark(
                         xStart: .value("Start", span.start),
                         xEnd: .value("End", span.end)
@@ -177,7 +200,7 @@ private struct RecentLatencyChart: View {
                 ForEach(metrics) { m in
                     LineMark(
                         x: .value("Time", m.timestamp),
-                        y: .value("ms", displayValue(m))
+                        y: .value("ms", m.displayLatency)
                     )
                     .interpolationMethod(.monotone)
                     .foregroundStyle(.green)
@@ -203,24 +226,5 @@ private struct RecentLatencyChart: View {
                 }
             }
         }
-    }
-
-    private func displayValue(_ m: NetworkMetric) -> Double {
-        m.pingPacketLoss >= 100 ? 0 : m.pingAvg
-    }
-}
-
-private struct PlaceholderDetail: View {
-    let title: String
-    let note: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(title).font(.largeTitle.bold())
-            Text(note).foregroundStyle(.secondary)
-            Spacer()
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(24)
     }
 }

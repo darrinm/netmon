@@ -9,11 +9,13 @@ import Foundation
 ///     so they don't inflate stats with `Date.now() - startTime`.
 struct OutageTracker {
     struct ProcessResult {
+        /// The input metric tagged with `isOutage` by the tracker.
+        var metric: NetworkMetric
         /// State-changing event (open/close). `nil` when nothing transitioned.
         var event: OutageEvent?
         /// The currently-ongoing outage with its updated lastUpdateTime, if any.
-        /// Callers should persist this if `event == nil && metric.isOutage`
-        /// to keep lastUpdateTime fresh across restarts.
+        /// Callers should persist this if `event == nil` to keep lastUpdateTime
+        /// fresh across restarts.
         var ongoing: OutageEvent?
     }
 
@@ -22,7 +24,7 @@ struct OutageTracker {
     /// wasn't running.
     static let staleOutageInterval: TimeInterval = 5 * 60
 
-    private let packetLossThreshold: Double = 50
+    private let packetLossThreshold = NetworkThresholds.outagePacketLoss
     private let consecutiveFailuresThreshold = 2
 
     private(set) var outages: [OutageEvent] = []
@@ -44,7 +46,7 @@ struct OutageTracker {
                 current.lastUpdateTime = metric.timestamp
                 currentOutage = current
                 replaceInOutages(current)
-                return ProcessResult(event: nil, ongoing: current)
+                return ProcessResult(metric: metric, event: nil, ongoing: current)
             }
 
             if consecutiveFailures >= consecutiveFailuresThreshold,
@@ -52,10 +54,10 @@ struct OutageTracker {
                 let new = startOutage(firstFailure: first, latestFailure: metric)
                 currentOutage = new
                 outages.append(new)
-                return ProcessResult(event: new, ongoing: new)
+                return ProcessResult(metric: metric, event: new, ongoing: new)
             }
 
-            return ProcessResult(event: nil, ongoing: nil)
+            return ProcessResult(metric: metric, event: nil, ongoing: nil)
         }
 
         firstFailureMetric = nil
@@ -66,10 +68,10 @@ struct OutageTracker {
             currentOutage = nil
             consecutiveFailures = 0
             replaceInOutages(current)
-            return ProcessResult(event: current, ongoing: nil)
+            return ProcessResult(metric: metric, event: current, ongoing: nil)
         }
         consecutiveFailures = 0
-        return ProcessResult(event: nil, ongoing: nil)
+        return ProcessResult(metric: metric, event: nil, ongoing: nil)
     }
 
     mutating func loadPersisted(_ persisted: [OutageEvent], now: Date = .now) {

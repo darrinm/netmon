@@ -9,6 +9,17 @@ struct OutagePostMortem: Codable, Sendable {
     var traceroute: [TracerouteHop]?
     var gatewayIP: String?
     var recentSystemEvents: [SystemEvent]
+    /// Kernel link_off→link_on intervals near the outage, captured live from
+    /// the unified log. Empty for outages recorded before this was added.
+    var linkDownIntervals: [LinkDownInterval]?
+}
+
+struct LinkDownInterval: Codable, Sendable, Identifiable {
+    var id: Date { start }
+    var interface: String
+    var start: Date
+    var end: Date?
+    var durationMs: Double?
 }
 
 struct WiFiSnapshot: Codable, Sendable {
@@ -32,6 +43,9 @@ struct EthernetSnapshot: Codable, Sendable {
     /// Human-readable media string from `ifconfig`, e.g. "1000baseT <full-duplex>".
     var media: String?
     var mtu: Int?
+
+    /// Hardware-port name for headings, falling back to "Ethernet".
+    var displayName: String { hardwarePort ?? "Ethernet" }
 }
 
 struct TracerouteHop: Codable, Sendable, Identifiable {

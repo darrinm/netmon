@@ -9,12 +9,15 @@ struct Sparkline: View {
     var windowSeconds: TimeInterval = 5 * 60
 
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 0.1)) { context in
+        // Spans depend only on `metrics`, so compute once per data change —
+        // not on every 0.1s TimelineView tick.
+        let spans = metrics.outageSpans()
+        return TimelineView(.periodic(from: .now, by: 0.1)) { context in
             let now = context.date
             let start = now.addingTimeInterval(-windowSeconds)
 
             Chart {
-                ForEach(Array(metrics.outageSpans().enumerated()), id: \.offset) { _, span in
+                ForEach(Array(spans.enumerated()), id: \.offset) { _, span in
                     RectangleMark(
                         xStart: .value("Start", span.start),
                         xEnd: .value("End", span.end)
@@ -37,7 +40,7 @@ struct Sparkline: View {
                 ForEach(metrics) { m in
                     LineMark(
                         x: .value("t", m.timestamp),
-                        y: .value("ms", displayValue(m))
+                        y: .value("ms", m.displayLatency)
                     )
                     .interpolationMethod(.catmullRom)
                     .foregroundStyle(.green)
@@ -51,9 +54,5 @@ struct Sparkline: View {
                 plot.background(.clear)
             }
         }
-    }
-
-    private func displayValue(_ m: NetworkMetric) -> Double {
-        m.pingPacketLoss >= 100 ? 0 : m.pingAvg
     }
 }

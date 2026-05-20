@@ -29,23 +29,19 @@ struct TrendsView: View {
                     HStack(spacing: 16) {
                         deltaCard("Median latency",
                                   recent: String(format: "%.0f ms", c.recent.medianLatencyMs),
-                                  delta: c.medianLatencyDeltaPct,
-                                  worseIsHigher: true)
+                                  delta: c.medianLatencyDeltaPct)
                         deltaCard("p95 latency",
                                   recent: String(format: "%.0f ms", c.recent.p95LatencyMs),
-                                  delta: c.p95LatencyDeltaPct,
-                                  worseIsHigher: true)
+                                  delta: c.p95LatencyDeltaPct)
                     }
 
                     HStack(spacing: 16) {
                         deltaCard("Mean packet loss",
                                   recent: String(format: "%.2f%%", c.recent.meanPacketLoss),
-                                  delta: c.packetLossDeltaPct,
-                                  worseIsHigher: true)
+                                  delta: c.packetLossDeltaPct)
                         deltaCard("Total downtime",
-                                  recent: formatSeconds(c.recent.outageSeconds),
-                                  delta: c.outageSecondsDeltaPct,
-                                  worseIsHigher: true)
+                                  recent: c.recent.outageSeconds < 1 ? "0s" : c.recent.outageSeconds.humanDuration,
+                                  delta: c.outageSecondsDeltaPct)
                     }
 
                     if c.recent.samples < 30 || c.prior.samples < 30 {
@@ -65,10 +61,9 @@ struct TrendsView: View {
             .frame(maxWidth: 760, alignment: .leading)
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
+        // Trends span days — they don't shift sample-to-sample, so reload
+        // only on a window change, not on every live tick.
         .task(id: windowDays) { await reload() }
-        .onChange(of: app.sessionSamples) { _, _ in
-            Task { await reload() }
-        }
     }
 
     private func reload() async {
@@ -80,25 +75,26 @@ struct TrendsView: View {
     }
 
     @ViewBuilder
-    private func deltaCard(_ title: String, recent: String, delta: Double?, worseIsHigher: Bool) -> some View {
+    private func deltaCard(_ title: String, recent: String, delta: Double?) -> some View {
         GroupBox {
             VStack(alignment: .leading, spacing: 6) {
                 Text(title).font(.caption).foregroundStyle(.secondary)
                 Text(recent)
                     .font(.system(size: 28, weight: .semibold, design: .rounded))
                     .monospacedDigit()
-                deltaLabel(delta, worseIsHigher: worseIsHigher)
+                deltaLabel(delta)
             }
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
+    // All trend metrics here (latency, loss, downtime) are "lower is better",
+    // so a positive delta is always worse.
     @ViewBuilder
-    private func deltaLabel(_ delta: Double?, worseIsHigher: Bool) -> some View {
+    private func deltaLabel(_ delta: Double?) -> some View {
         if let d = delta {
-            let isWorse = worseIsHigher ? d > 0 : d < 0
-            let color: Color = abs(d) < 5 ? .secondary : (isWorse ? .red : .green)
+            let color: Color = abs(d) < 5 ? .secondary : (d > 0 ? .red : .green)
             let symbol = d > 0 ? "▲" : (d < 0 ? "▼" : "—")
             HStack(spacing: 4) {
                 Text(symbol)
@@ -111,12 +107,5 @@ struct TrendsView: View {
                 .font(.caption)
                 .foregroundStyle(.tertiary)
         }
-    }
-
-    private func formatSeconds(_ s: Double) -> String {
-        if s < 1 { return "0s" }
-        if s < 60 { return String(format: "%.0fs", s) }
-        if s < 3600 { return String(format: "%dm %ds", Int(s/60), Int(s.truncatingRemainder(dividingBy: 60))) }
-        return String(format: "%.1fh", s/3600)
     }
 }

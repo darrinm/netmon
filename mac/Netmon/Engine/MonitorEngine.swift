@@ -27,6 +27,8 @@ actor MonitorEngine {
     private let continuation: AsyncStream<NetworkMetric>.Continuation
     private var task: Task<Void, Never>?
     private(set) var config: Config
+    private var cachedGateway: String?
+    private var tickCount = 0
 
     init(config: Config = Config()) {
         self.config = config
@@ -64,9 +66,19 @@ actor MonitorEngine {
     }
 
     func collectOnce() async -> NetworkMetric {
+        // Refresh the gateway IP on the first tick and roughly once a minute
+        // after — it rarely changes, no need to shell out every second.
+        tickCount += 1
+        if cachedGateway == nil || tickCount % 60 == 0 {
+            cachedGateway = await Task.detached { DefaultRoute.current().gatewayIP }.value
+        }
+        let gateway = cachedGateway
+
         async let ping = measurePing()
         async let dns = measureDNS()
-        let (p, d) = await (ping, dns)
+        async let gw = measureGatewayPing(gateway)
+        let (p, d, g) = await (ping, dns, gw)
+
         return NetworkMetric(
             timestamp: Date(),
             pingHost: config.pingHost,
@@ -75,20 +87,26 @@ actor MonitorEngine {
             pingMax: p.max,
             pingPacketLoss: p.packetLoss,
             dnsResponseTime: d.responseTime,
-            dnsSuccess: d.success
+            dnsSuccess: d.success,
+            gatewayIP: gateway,
+            gatewayPingAvg: g?.avg,
+            gatewayPacketLoss: g?.loss
         )
+    }
+
+    /// Pings the LAN gateway concurrently with the internet target. Two quick
+    /// pings — the gateway is local, so this stays well under one tick.
+    private func measureGatewayPing(_ gateway: String?) async -> (avg: Double, loss: Double)? {
+        guard let gateway else { return nil }
+        return await Task.detached {
+            let r = Self.shellPing(host: gateway, count: 2, deadline: 1, perPingInterval: 0.2)
+            return (avg: r.avg, loss: r.packetLoss)
+        }.value
     }
 
     // MARK: - Ping
 
-    private struct PingResult: Sendable {
-        var min: Double
-        var avg: Double
-        var max: Double
-        var packetLoss: Double // 0..100
-    }
-
-    private func measurePing() async -> PingResult {
+    private func measurePing() async -> NativePing.Result {
         let host = config.pingHost
         // Always send `pingCount` probes per sample (default 3) regardless of
         // interval. Single-ping samples are too noisy to distinguish a real
@@ -99,15 +117,10 @@ actor MonitorEngine {
         let perPingInterval = config.pingInterval
         let deadline = max(1, min(config.pingDeadline, intervalSec - 1))
         let useNative = config.useNativeICMP
-        return await Task.detached { () -> PingResult in
+        return await Task.detached { () -> NativePing.Result in
             if useNative {
                 let native = NativePing.ping(host: host, count: count, timeout: 2)
-                if native.packetLoss < 100 {
-                    return PingResult(
-                        min: native.min, avg: native.avg, max: native.max,
-                        packetLoss: native.packetLoss
-                    )
-                }
+                if native.packetLoss < 100 { return native }
             }
             return Self.shellPing(host: host, count: count, deadline: deadline, perPingInterval: perPingInterval)
         }.value
@@ -115,32 +128,19 @@ actor MonitorEngine {
 
     /// Primary ping implementation: shells out to /sbin/ping with a sub-second
     /// inter-packet interval so we can fit multiple probes inside a 1s tick.
-    private static func shellPing(host: String, count: Int, deadline: Int, perPingInterval: Double) -> PingResult {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/sbin/ping")
-        process.arguments = [
+    private static func shellPing(host: String, count: Int, deadline: Int, perPingInterval: Double) -> NativePing.Result {
+        let output = Subprocess.capture("/sbin/ping", [
             "-c", "\(count)",
             "-i", String(format: "%.2f", perPingInterval),
             "-t", "\(deadline)",
             host,
-        ]
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = pipe
-        do {
-            try process.run()
-            process.waitUntilExit()
-        } catch {
-            return PingResult(min: 0, avg: 0, max: 0, packetLoss: 100)
-        }
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        let output = String(data: data, encoding: .utf8) ?? ""
+        ])
         return Self.parsePingOutput(output)
     }
 
     /// Parses macOS `ping` output. Looks for `X.X% packet loss` and
     /// `round-trip min/avg/max/stddev = a/b/c/d ms`.
-    private static func parsePingOutput(_ output: String) -> PingResult {
+    private static func parsePingOutput(_ output: String) -> NativePing.Result {
         var packetLoss = 100.0
         var minMs = 0.0, avgMs = 0.0, maxMs = 0.0
 
@@ -166,7 +166,7 @@ actor MonitorEngine {
             }
         }
 
-        return PingResult(min: minMs, avg: avgMs, max: maxMs, packetLoss: packetLoss)
+        return NativePing.Result(min: minMs, avg: avgMs, max: maxMs, packetLoss: packetLoss)
     }
 
     // MARK: - DNS

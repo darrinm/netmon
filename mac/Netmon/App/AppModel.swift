@@ -18,6 +18,7 @@ final class AppModel {
     private var engine: MonitorEngine?
     private var tracker = OutageTracker()
     private var consumeTask: Task<Void, Never>?
+    private var lastOngoingUpsert: Date?
 
     func start() async {
         do {
@@ -51,6 +52,9 @@ final class AppModel {
 
             // Prime SystemEventLog (subscribes to sleep/wake/path changes).
             _ = SystemEventLog.shared
+
+            // Start tailing the unified log for link up/down kernel events.
+            await LinkEventMonitor.shared.start()
         } catch {
             startupError = "Failed to start: \(error.localizedDescription)"
         }
@@ -68,6 +72,7 @@ final class AppModel {
 
     func stop() async {
         await engine?.stop()
+        await LinkEventMonitor.shared.stop()
         consumeTask?.cancel()
     }
 
@@ -96,16 +101,22 @@ final class AppModel {
         return try? await store.loadPostMortem(for: outageID)
     }
 
+    /// Metrics in a window centered on `date` — used to inspect what the
+    /// gateway / internet pings were doing across an outage.
+    func metricsAround(_ date: Date, windowSeconds: TimeInterval = 30) async -> [NetworkMetric] {
+        guard let store else { return [] }
+        let from = date.addingTimeInterval(-windowSeconds)
+        let to = date.addingTimeInterval(windowSeconds)
+        return (try? await store.metrics(from: from, to: to)) ?? []
+    }
+
     fileprivate func savePostMortem(_ pm: OutagePostMortem, for outageID: String) async {
         try? await store?.savePostMortem(pm, for: outageID)
     }
 
     private func handle(_ metric: NetworkMetric) async {
         let result = tracker.processMetric(metric)
-
-        // Persist metric (use the tracker-tagged copy so isOutage flag matches)
-        var stored = metric
-        stored.isOutage = result.ongoing?.id != nil || result.event?.endTime == nil && result.event != nil
+        let stored = result.metric
         try? await store?.insertMetric(stored)
 
         if let event = result.event {
@@ -126,19 +137,33 @@ final class AppModel {
                 NotificationCoord.shared.outageEnded(event)
             }
         } else if let ongoing = result.ongoing {
-            try? await store?.upsertOutage(ongoing)
+            // Persist lastUpdateTime at most every 30s — the restart
+            // staleness window is 5 min, so finer granularity buys nothing
+            // and avoids a DB write on every tick during a long outage.
+            let now = Date()
+            if lastOngoingUpsert.map({ now.timeIntervalSince($0) >= 30 }) ?? true {
+                try? await store?.upsertOutage(ongoing)
+                lastOngoingUpsert = now
+            }
         }
 
         latestMetric = stored
-        currentOutage = tracker.currentOutage
         sessionSamples += 1
 
-        // Maintain rolling 5-min window
-        recentMetrics.append(stored)
-        let fiveMinAgo = Date().addingTimeInterval(-5 * 60)
-        recentMetrics.removeAll { $0.timestamp < fiveMinAgo }
+        // Skip no-op writes so @Observable doesn't wake the menubar item
+        // and charts every tick when nothing visible actually changed.
+        if currentOutage != tracker.currentOutage { currentOutage = tracker.currentOutage }
+        let newHealth = HealthScorer.score(stored)
+        if health != newHealth { health = newHealth }
 
-        health = HealthScorer.score(stored)
+        // Maintain rolling 5-min window — drop the stale prefix (samples
+        // arrive in timestamp order, so only a prefix is ever expired).
+        recentMetrics.append(stored)
+        let cutoff = Date().addingTimeInterval(-5 * 60)
+        if let firstFresh = recentMetrics.firstIndex(where: { $0.timestamp >= cutoff }),
+           firstFresh > 0 {
+            recentMetrics.removeFirst(firstFresh)
+        }
     }
 }
 
@@ -164,8 +189,9 @@ enum HistoryRange: Hashable, Identifiable, CaseIterable {
 
 enum HealthScorer {
     static func score(_ metric: NetworkMetric) -> HealthState {
-        if metric.isOutage || metric.pingPacketLoss >= 50 { return .bad }
-        if metric.pingPacketLoss >= 5 || metric.pingAvg >= 100 { return .degraded }
+        if metric.isOutage || metric.pingPacketLoss >= NetworkThresholds.outagePacketLoss { return .bad }
+        if metric.pingPacketLoss >= NetworkThresholds.degradedPacketLoss
+            || metric.pingAvg >= NetworkThresholds.degradedLatency { return .degraded }
         return .good
     }
 }

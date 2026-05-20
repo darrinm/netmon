@@ -11,8 +11,19 @@ struct NetworkMetric: Codable, Hashable, Identifiable, Sendable {
     var dnsResponseTime: Double // ms; -1 if failed
     var dnsSuccess: Bool
     var isOutage: Bool = false
+    // Concurrent ping of the default gateway. nil when the gateway is
+    // unknown or for samples recorded before gateway monitoring existed.
+    var gatewayIP: String? = nil
+    var gatewayPingAvg: Double? = nil
+    var gatewayPacketLoss: Double? = nil
 
     var id: Date { timestamp }
+
+    /// Latency to plot — a full-loss sample reads as 0 so the line drops
+    /// cleanly to the floor instead of leaving a gap.
+    var displayLatency: Double {
+        pingPacketLoss >= 100 ? 0 : pingAvg
+    }
 }
 
 extension Array where Element == NetworkMetric {
@@ -22,7 +33,7 @@ extension Array where Element == NetworkMetric {
     /// Each span's end is the next non-outage sample's timestamp (or, for an
     /// ongoing run, the last outage sample's timestamp plus `minOpenWidth`).
     func outageSpans(
-        threshold: Double = 50,
+        threshold: Double = NetworkThresholds.outagePacketLoss,
         minSamples: Int = 2,
         minOpenWidth: TimeInterval = 1
     ) -> [(start: Date, end: Date)] {
@@ -37,11 +48,10 @@ extension Array where Element == NetworkMetric {
                 runCount += 1
                 lastBad = m.timestamp
             } else if let start = runStart {
-                if runCount >= minSamples, let last = lastBad {
-                    // Close the band at this good sample so it's at least one
-                    // sampling interval wide.
+                // A good sample closes the run; end the band at it so even a
+                // minimal run is one sampling interval wide.
+                if runCount >= minSamples {
                     spans.append((start, m.timestamp))
-                    _ = last
                 }
                 runStart = nil
                 runCount = 0
@@ -69,6 +79,9 @@ extension NetworkMetric: FetchableRecord, PersistableRecord {
         static let dnsResponseTime = Column("dns_response_time")
         static let dnsSuccess = Column("dns_success")
         static let isOutage = Column("is_outage")
+        static let gatewayIP = Column("gateway_ip")
+        static let gatewayPingAvg = Column("gateway_ping_avg")
+        static let gatewayPacketLoss = Column("gateway_packet_loss")
     }
 
     init(row: Row) throws {
@@ -81,6 +94,9 @@ extension NetworkMetric: FetchableRecord, PersistableRecord {
         dnsResponseTime = row[Columns.dnsResponseTime]
         dnsSuccess = row[Columns.dnsSuccess]
         isOutage = row[Columns.isOutage]
+        gatewayIP = row[Columns.gatewayIP]
+        gatewayPingAvg = row[Columns.gatewayPingAvg]
+        gatewayPacketLoss = row[Columns.gatewayPacketLoss]
     }
 
     func encode(to container: inout PersistenceContainer) throws {
@@ -93,5 +109,8 @@ extension NetworkMetric: FetchableRecord, PersistableRecord {
         container[Columns.dnsResponseTime] = dnsResponseTime
         container[Columns.dnsSuccess] = dnsSuccess
         container[Columns.isOutage] = isOutage
+        container[Columns.gatewayIP] = gatewayIP
+        container[Columns.gatewayPingAvg] = gatewayPingAvg
+        container[Columns.gatewayPacketLoss] = gatewayPacketLoss
     }
 }

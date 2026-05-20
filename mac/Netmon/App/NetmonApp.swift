@@ -3,7 +3,6 @@ import SwiftUI
 @main
 struct NetmonApp: App {
     @State private var app: AppModel
-    @Environment(\.openWindow) private var openWindow
 
     init() {
         let model = AppModel()

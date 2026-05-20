@@ -60,6 +60,13 @@ actor MetricStore {
                 t.column("json", .text).notNull()
             }
         }
+        m.registerMigration("v3_gateway") { db in
+            try db.alter(table: "metrics") { t in
+                t.add(column: "gateway_ip", .text)
+                t.add(column: "gateway_ping_avg", .double)
+                t.add(column: "gateway_packet_loss", .double)
+            }
+        }
         return m
     }
 
@@ -105,6 +112,16 @@ actor MetricStore {
     func allMetrics() async throws -> [NetworkMetric] {
         try await dbPool.read { db in
             try NetworkMetric.order(NetworkMetric.Columns.timestamp).fetchAll(db)
+        }
+    }
+
+    func metrics(from: Date, to: Date) async throws -> [NetworkMetric] {
+        try await dbPool.read { db in
+            try NetworkMetric
+                .filter(NetworkMetric.Columns.timestamp >= from
+                        && NetworkMetric.Columns.timestamp <= to)
+                .order(NetworkMetric.Columns.timestamp)
+                .fetchAll(db)
         }
     }
 

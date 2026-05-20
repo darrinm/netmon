@@ -15,6 +15,14 @@ struct OutageEvent: Codable, Hashable, Identifiable, Sendable {
     var type: OutageType
     var startPacketLoss: Double
     var startDNSFailure: Bool
+
+    /// Duration in ms — the recorded value, or elapsed-since-start for an
+    /// ongoing outage.
+    var effectiveDurationMs: Double {
+        durationMs ?? (endTime ?? Date()).timeIntervalSince(startTime) * 1000
+    }
+
+    var effectiveDuration: TimeInterval { effectiveDurationMs / 1000 }
 }
 
 extension OutageEvent: FetchableRecord, PersistableRecord {

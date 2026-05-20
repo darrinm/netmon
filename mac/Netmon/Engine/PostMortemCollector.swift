@@ -9,7 +9,8 @@ import CoreLocation
 final class PostMortemCollector {
     static func collect(for outageStart: Date, target: String) async -> OutagePostMortem {
         // Cheap captures first so the snapshot reflects the moment closely.
-        let primary = await Task.detached { Self.primaryInterface() }.value
+        let route = await Task.detached { DefaultRoute.current() }.value
+        let primary = route.interface
         let wifiInterfaceNames = await MainActor.run { Self.wifiInterfaceNames() }
 
         var wifi: WiFiSnapshot?
@@ -21,44 +22,29 @@ final class PostMortemCollector {
         }
 
         let events = await MainActor.run { SystemEventLog.shared.eventsNear(outageStart) }
-        let gateway = await Task.detached { Self.captureDefaultGateway() }.value
 
         // Traceroute is slow and best run after the cheap captures.
         let hops = await Task.detached { Self.runTraceroute(target: target) }.value
+
+        // Read link-down intervals last — gives the live log stream maximum
+        // time to deliver the link_on event (the outage's link_on lands a
+        // few seconds in, and traceroute above already bought us ~15s).
+        let links = await LinkEventMonitor.shared.recentIntervals(near: outageStart).map {
+            LinkDownInterval(interface: $0.interface, start: $0.start, end: $0.end, durationMs: $0.durationMs)
+        }
 
         return OutagePostMortem(
             capturedAt: Date(),
             wifi: wifi,
             ethernet: ethernet,
             traceroute: hops,
-            gatewayIP: gateway,
-            recentSystemEvents: events
+            gatewayIP: route.gatewayIP,
+            recentSystemEvents: events,
+            linkDownIntervals: links
         )
     }
 
     // MARK: - Interface detection
-
-    /// Returns the interface that carries the default route (en0, en1, ...).
-    private static func primaryInterface() -> String? {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/sbin/route")
-        process.arguments = ["-n", "get", "default"]
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = Pipe()
-        do {
-            try process.run()
-            process.waitUntilExit()
-        } catch { return nil }
-        let text = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-        for line in text.split(separator: "\n") {
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-            if trimmed.hasPrefix("interface:") {
-                return String(trimmed.dropFirst("interface:".count)).trimmingCharacters(in: .whitespaces)
-            }
-        }
-        return nil
-    }
 
     /// All BSD device names CoreWLAN considers Wi-Fi interfaces.
     @MainActor
@@ -85,7 +71,7 @@ final class PostMortemCollector {
     // MARK: - Ethernet
 
     private static func captureEthernet(interface: String) -> EthernetSnapshot? {
-        let ifconfigText = runReadingOutput(URL(fileURLWithPath: "/sbin/ifconfig"), [interface])
+        let ifconfigText = Subprocess.capture("/sbin/ifconfig", [interface])
         guard !ifconfigText.isEmpty else { return nil }
 
         var mac: String?, ip: String?, media: String?, mtu: Int?
@@ -136,7 +122,7 @@ final class PostMortemCollector {
     /// Maps "en1" → "Ethernet" / "Wi-Fi" / "Thunderbolt Bridge" / ... using
     /// `networksetup -listallhardwareports`.
     private static func lookupHardwarePort(for interface: String) -> String? {
-        let text = runReadingOutput(URL(fileURLWithPath: "/usr/sbin/networksetup"), ["-listallhardwareports"])
+        let text = Subprocess.capture("/usr/sbin/networksetup", ["-listallhardwareports"])
         // Blocks look like:
         //   Hardware Port: Ethernet
         //   Device: en1
@@ -155,24 +141,11 @@ final class PostMortemCollector {
         return nil
     }
 
-    // MARK: - Default gateway
-
-    private static func captureDefaultGateway() -> String? {
-        let text = runReadingOutput(URL(fileURLWithPath: "/sbin/route"), ["-n", "get", "default"])
-        for line in text.split(separator: "\n") {
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-            if trimmed.hasPrefix("gateway:") {
-                return String(trimmed.dropFirst("gateway:".count)).trimmingCharacters(in: .whitespaces)
-            }
-        }
-        return nil
-    }
-
     // MARK: - Traceroute
 
     private static func runTraceroute(target: String, maxHops: Int = 15) -> [TracerouteHop] {
-        let text = runReadingOutput(
-            URL(fileURLWithPath: "/usr/sbin/traceroute"),
+        let text = Subprocess.capture(
+            "/usr/sbin/traceroute",
             ["-n", "-m", "\(maxHops)", "-w", "1", "-q", "1", target]
         )
         return parseTraceroute(text)
@@ -204,23 +177,6 @@ final class PostMortemCollector {
         return hops
     }
 
-    // MARK: - Helpers
-
-    private static func runReadingOutput(_ url: URL, _ args: [String]) -> String {
-        let process = Process()
-        process.executableURL = url
-        process.arguments = args
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = Pipe()
-        do {
-            try process.run()
-            process.waitUntilExit()
-        } catch {
-            return ""
-        }
-        return String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-    }
 }
 
 /// Asks for Location Services authorization. CoreWLAN returns nil for
