@@ -42,16 +42,6 @@ struct PopoverView: View {
             Divider()
 
             HStack {
-                Text(app.latestMetric?.pingHost ?? "8.8.8.8")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Text("\(Preferences.shared.intervalSeconds)s interval · \(app.sessionSamples) samples")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            HStack {
                 Button("Open Netmon") {
                     openWindow(id: "main")
                     NSApp.activate(ignoringOtherApps: true)

@@ -52,7 +52,7 @@ private struct NowDetail: View {
         VStack(alignment: .leading, spacing: 20) {
             Text("Now").font(.largeTitle.bold())
 
-            HStack(spacing: 24) {
+            HStack(alignment: .top, spacing: 24) {
                 bigStat(title: "Latency (5m avg)", value: latencyText,
                         secondary: minMaxText, tint: app.health.tint)
                 bigStat(title: "Packet Loss (5m)", value: lossText, secondary: nil)
