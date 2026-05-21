@@ -1,8 +1,8 @@
 # Outage Analysis — netmon
 
 Analysis of recorded outages on the primary monitored machine.
-Monitoring window: **2026-05-19 03:44 UTC → 2026-05-20 14:57 UTC** (~35h),
-86,990 metric samples, **26 outages**, 22 post-mortems.
+Outages span **2026-05-19 04:21 UTC → 2026-05-21 13:59 UTC** — **30
+outages** over ~2 days, all with the identical signature below.
 
 ## Headline
 
@@ -12,33 +12,37 @@ congestion, not a measurement artifact.
 
 ## Evidence
 
-1. **All 26 outages are identical.** 100% packet loss, type `connectivity`,
-   recorded duration a near-constant 3.0–3.5s. Not one sustained outage.
+1. **All 30 outages are identical.** 100% packet loss, type `connectivity`,
+   recorded duration a near-constant 3.0–4.1s. Not one sustained outage.
 
 2. **Latency is a clean cliff, not a ramp.** Latency holds steady at ~1.8ms,
    drops straight to 100% loss, and returns to the *exact* same baseline.
    No congestion build-up → rules out bufferbloat / saturation / ISP
    congestion.
 
-3. **macOS confirms each one.** All 22 post-mortems contain an
+3. **macOS confirms each one.** Every post-mortem contains an
    `NWPathMonitor` `networkPathUnsatisfied` event within 1–4s of the
    outage. The OS itself declared "no usable network path."
 
-4. **The kernel logged the cause** (2 of 26 outages still in `log`
-   retention; the rest rolled out):
+4. **The kernel logged the cause.** Initially recovered from `log show`
+   for 2 outages; netmon's `LinkEventMonitor` now captures every one
+   live. Five `en0` link-down intervals measured so far:
 
    ```
-   07:55:31.995  kernel: intf=en0 event=link_off
-   07:55:36.017  kernel: intf=en0 event=link_on     → 4.022s
-   07:55:50.995  kernel: intf=en0 event=link_off
-   07:55:55.017  kernel: intf=en0 event=link_on     → 4.022s
+   2026-05-20 07:55:31.995 → 36.017   4.022s
+   2026-05-20 07:55:50.995 → 55.017   4.022s
+   2026-05-21 11:53:02     → 11:53:06   4.022s
+   2026-05-21 11:59:13     → 11:59:17   4.023s
+   2026-05-21 13:59:33     → 13:59:36   3.022s
    ```
 
-   Both link-downs lasted **exactly 4.022 seconds — identical to the
-   millisecond.** `configd` simultaneously reported
-   `DHCP en0: status = 'media inactive'`. A random physical fault gives
-   *variable* durations; an exact-to-the-ms recovery indicates a
-   deterministic state machine — an autonegotiation cycle.
+   `configd` simultaneously reports `DHCP en0: status = 'media inactive'`.
+
+   **The durations are quantized: every one is a whole number of seconds
+   plus a fixed ~22 ms** (4.022, 4.022, 4.022, 4.023, 3.022). A random
+   physical fault produces *variable* durations. Whole-seconds-plus-a-
+   constant means a deterministic state machine retrying on a 1-second
+   tick — i.e. an autonegotiation cycle, not a loose cable.
 
 5. **The NIC is the smoking gun.** `en0` is an **Apple AQC113 — an
    Aquantia 10 GbE controller** (driver `AppleEthernetAquantiaAqtion`,
@@ -52,6 +56,12 @@ congestion, not a measurement artifact.
    *would* be suspect), but a UDP DNS query to 1.1.1.1 fails at the same
    instant, and the kernel logs a real `link_off`. Different destination,
    different protocol, same drop. Ruled out.
+
+7. **Scope is Local — the LAN gateway drops too.** netmon now pings the
+   gateway (192.168.0.1) concurrently. During the 2026-05-21 outages the
+   gateway — one hop away on the same LAN — went to 100% loss at the same
+   instant as the internet target. Even the router is unreachable, so the
+   break is the Mac↔router link, not anything upstream.
 
 ## Patterns
 
@@ -99,11 +109,17 @@ resolve it.
 EEE on the router port → swap/re-seat cable → force link speed →
 different port → different router.
 
-## Tooling follow-ups (built)
+## Tooling follow-ups (built & verified)
 
-- **LinkEventMonitor** — netmon now tails the unified log for
-  `en0` `link_off`/`link_on` and records exact link-down durations into
-  every post-mortem, so we no longer depend on `log show` retention.
-- **Gateway monitoring** — netmon now pings the default gateway
-  concurrently with the internet target each tick, and the outage detail
-  shows a local-vs-upstream scope verdict.
+- **LinkEventMonitor** — netmon tails the unified log for `en0`
+  `link_off`/`link_on` and records exact link-down durations into every
+  post-mortem. Verified: the 2026-05-21 outages were captured live with
+  exact durations, no `log show` retrieval needed.
+- **Gateway monitoring** — netmon pings the default gateway concurrently
+  with the internet target each tick; the outage detail shows a
+  local-vs-upstream scope verdict. Verified: confirms "Local" on the
+  2026-05-21 outages.
+- **Post-mortem timing** — capture is delayed 15s after an outage starts.
+  These outages are only ~4s long; capturing during one returned nothing
+  (no default route → `route`/`traceroute` fail; `link_on` not yet
+  logged). The delay lets the link recover so the snapshot is complete.
