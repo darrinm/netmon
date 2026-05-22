@@ -4,6 +4,27 @@ Analysis of recorded outages on the primary monitored machine.
 Outages span **2026-05-19 04:21 UTC → 2026-05-21 13:59 UTC** — **30
 outages** over ~2 days, all with the identical signature below.
 
+## RESOLVED (2026-05-22)
+
+**Root cause: an ageing unmanaged ASUS switch in the path** between the
+Mac and the router. Its early-era 802.3az (EEE) implementation was
+flapping the gigabit link — the Mac's link came up with
+`energy-efficient-ethernet` negotiated only while connected through that
+switch.
+
+**Fix: the Mac was re-cabled directly to the TP-Link Omada ER707-M2
+router**, bypassing the switch. The link then negotiated *without* EEE
+(`1000baseT <full-duplex>` — no `energy-efficient-ethernet` flag).
+
+**Result:** ~20 hours direct-to-router → **zero link flaps** (no
+`en0 link_off`, no `networkPathUnsatisfied`). The one outage in that
+window was a different, unrelated event — a ~6s upstream blip to 8.8.8.8
+with the gateway staying 100% reachable (scope: Upstream), not a link
+drop. Action: retire the ASUS switch; replace with a modern (Omada
+managed, ideally multi-gig) switch.
+
+The analysis below is the investigation that led here.
+
 ## Headline
 
 **Every recorded "outage" is the Mac's built-in Ethernet link (`en0`)
