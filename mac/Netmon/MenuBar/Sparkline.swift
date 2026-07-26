@@ -10,10 +10,12 @@ struct Sparkline: View {
 
     var body: some View {
         // Spans depend only on `metrics`, so compute once per data change —
-        // not on every 0.1s TimelineView tick.
+        // not on every 0.1s tick.
         let spans = metrics.outageSpans()
-        return TimelineView(.periodic(from: .now, by: 0.1)) { context in
-            let now = context.date
+        // LiveTimeline, not TimelineView: MenuBarExtra keeps this view alive
+        // after the popover is dismissed, and an unguarded timeline would keep
+        // re-rendering this chart with nothing on screen.
+        return LiveTimeline(interval: 0.1) { now in
             let start = now.addingTimeInterval(-windowSeconds)
 
             Chart {
