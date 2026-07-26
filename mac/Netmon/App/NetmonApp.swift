@@ -2,6 +2,7 @@ import SwiftUI
 
 @main
 struct NetmonApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var app: AppModel
 
     init() {

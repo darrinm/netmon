@@ -168,12 +168,12 @@ private struct RecentLatencyChart: View {
 
     var body: some View {
         // Spans depend only on `metrics` — compute once per data change,
-        // not on every 0.1s TimelineView tick.
+        // not on every 0.1s tick.
         let spans = metrics.outageSpans()
-        // TimelineView ticks 10× per second so the X-axis advances smoothly
-        // instead of jumping when a new sample arrives.
-        return TimelineView(.periodic(from: .now, by: 0.1)) { context in
-            let now = context.date
+        // Ticks 10× per second so the X-axis advances smoothly instead of
+        // jumping when a new sample arrives — but only while this window is
+        // actually on screen, not when it's closed or fully occluded.
+        return LiveTimeline(interval: 0.1) { now in
             let start = now.addingTimeInterval(-windowSeconds)
 
             Chart {
