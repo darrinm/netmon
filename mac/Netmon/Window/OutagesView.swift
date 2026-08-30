@@ -5,6 +5,20 @@ struct OutagesView: View {
     @State private var outages: [OutageEvent] = []
     @State private var selection: OutageEvent.ID?
 
+    /// Outages bucketed into calendar days, newest day first. `outages` is
+    /// already newest-first, so rows within a day keep that order too.
+    private var days: [OutageDay] {
+        let calendar = Calendar.current
+        var order: [Date] = []
+        var buckets: [Date: [OutageEvent]] = [:]
+        for outage in outages {
+            let day = calendar.startOfDay(for: outage.startTime)
+            if buckets[day] == nil { order.append(day) }
+            buckets[day, default: []].append(outage)
+        }
+        return order.map { OutageDay(date: $0, outages: buckets[$0] ?? []) }
+    }
+
     var body: some View {
         HSplitView {
             list
@@ -36,8 +50,16 @@ struct OutagesView: View {
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                List(outages, selection: $selection) { o in
-                    OutageRow(outage: o).tag(o.id)
+                List(selection: $selection) {
+                    ForEach(days) { day in
+                        SwiftUI.Section {
+                            ForEach(day.outages) { o in
+                                OutageRow(outage: o).tag(o.id)
+                            }
+                        } header: {
+                            OutageDayHeader(day: day)
+                        }
+                    }
                 }
                 .listStyle(.inset)
             }
@@ -55,6 +77,45 @@ struct OutagesView: View {
     }
 }
 
+/// One calendar day's worth of outages, for a list section.
+private struct OutageDay: Identifiable {
+    let date: Date
+    let outages: [OutageEvent]
+
+    var id: Date { date }
+
+    /// "Today" / "Yesterday" for the two most recent days, otherwise a
+    /// weekday-and-date label like "Sat, Aug 29, 2026".
+    var title: String {
+        let calendar = Calendar.current
+        if calendar.isDateInToday(date) { return "Today" }
+        if calendar.isDateInYesterday(date) { return "Yesterday" }
+        return date.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day().year())
+    }
+
+    /// "3 outages · 15s down" — how bad the day was, at a glance.
+    var summary: String {
+        let count = outages.count
+        let total = outages.reduce(0) { $0 + $1.effectiveDuration }
+        return "\(count) outage\(count == 1 ? "" : "s") · \(total.humanDuration) down"
+    }
+}
+
+private struct OutageDayHeader: View {
+    let day: OutageDay
+
+    var body: some View {
+        HStack {
+            Text(day.title).font(.subheadline.bold())
+            Spacer()
+            Text(day.summary)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.vertical, 2)
+    }
+}
+
 private struct OutageRow: View {
     let outage: OutageEvent
 
@@ -64,7 +125,8 @@ private struct OutageRow: View {
                 .fill(outage.type == .connectivity ? Color.red : Color.orange)
                 .frame(width: 10, height: 10)
             VStack(alignment: .leading, spacing: 2) {
-                Text(outage.startTime.formatted(date: .abbreviated, time: .shortened))
+                // Date lives in the section header, so the row shows time only.
+                Text(outage.startTime.formatted(date: .omitted, time: .shortened))
                     .font(.callout)
                 Text(durationText)
                     .font(.caption)
