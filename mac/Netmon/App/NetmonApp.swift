@@ -45,7 +45,7 @@ private struct OpenMainWindowOnNotification: ViewModifier {
     }
 }
 
-enum HealthState: Sendable {
+enum HealthState: Sendable, CaseIterable {
     case unknown, good, degraded, bad
 
     var systemImage: String {
